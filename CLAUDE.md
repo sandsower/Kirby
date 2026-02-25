@@ -21,3 +21,19 @@
 - The `nx-generate` skill handles generator discovery internally - don't call nx_docs just to look up generator syntax
 
 <!-- nx configuration end-->
+
+---
+
+## Testing Strategy
+
+- **TDD for libraries:** `tmux-manager` (tmux.ts, session-store.ts, claude-session.ts) — write tests first, then implement.
+- **TDD for Ink components:** Use `ink-testing-library` to verify text content + keyboard navigation. No real TTY needed.
+- **Manual testing only for:** ANSI/visual rendering, real tmux input forwarding.
+- **Run tests via NX:** `npx nx test tmux-manager`, `npx nx test cli`.
+
+## Milestone Checkins
+
+At each major milestone, stop and check in with the user:
+- List what was implemented
+- Provide manual test commands the user can run
+- Wait for confirmation before continuing
