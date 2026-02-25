@@ -37,3 +37,9 @@ At each major milestone, stop and check in with the user:
 - List what was implemented
 - Provide manual test commands the user can run
 - Wait for confirmation before continuing
+
+## Development Approach
+
+- **Don't build what you can't verify.** If behavior depends on real-world interaction (e.g. Claude session patterns), don't guess — build a testable mock first, verify with the real thing later.
+- **Visual first for TUI work.** Get something on screen the user can see and interact with. Mock data is fine — proving the rendering/interaction works is the priority.
+- **Smallest verifiable increment.** One feature at a time, confirm it works, then layer on the next.
