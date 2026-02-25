@@ -1,1 +1,1 @@
-export * from './lib/tmux-manager.js';
+export * from "./lib/tmux.js";
