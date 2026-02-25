@@ -5,6 +5,7 @@ import {
   isAvailable,
   hasSession,
   killSession,
+  createSession,
   capturePane,
   sendKeys,
   sendLiteral,
@@ -134,6 +135,39 @@ describe("killSession", () => {
       throw new Error("session not found");
     });
     expect(killSession("nonexistent")).toBe(false);
+  });
+});
+
+describe("createSession", () => {
+  it("should create a session without dimensions", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(createSession("my-session")).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledWith(
+      "tmux new-session -d -s my-session",
+      { stdio: "ignore" }
+    );
+  });
+
+  it("should create a session with dimensions", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(createSession("my-session", 120, 40)).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledWith(
+      "tmux new-session -d -s my-session -x 120 -y 40",
+      { stdio: "ignore" }
+    );
+  });
+
+  it("should return false on failure", () => {
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error("duplicate session");
+    });
+    expect(createSession("existing")).toBe(false);
+  });
+
+  it("should reject invalid session names", () => {
+    expect(() => createSession("foo; rm -rf /")).toThrow(
+      "Invalid tmux session name"
+    );
   });
 });
 

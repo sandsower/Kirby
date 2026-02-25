@@ -137,6 +137,25 @@ export function sendLiteral(name: string, text: string): boolean {
   }
 }
 
+/** Create a new detached tmux session */
+export function createSession(
+  name: string,
+  cols?: number,
+  rows?: number
+): boolean {
+  const safeName = escapeArg(name);
+  const sizeFlags =
+    cols !== undefined && rows !== undefined ? ` -x ${cols} -y ${rows}` : "";
+  try {
+    execSync(`tmux new-session -d -s ${safeName}${sizeFlags}`, {
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Escape a tmux argument to prevent injection */
 function escapeArg(arg: string): string {
   // Only allow alphanumeric, hyphens, underscores, dots
