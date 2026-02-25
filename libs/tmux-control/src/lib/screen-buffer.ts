@@ -5,11 +5,12 @@
  * a headless xterm Terminal, and serializes the visible screen content
  * as an ANSI-encoded string suitable for Ink's <Text> component.
  */
-import { Terminal } from "@xterm/headless";
+import xterm from "@xterm/headless";
+const { Terminal } = xterm;
 import { SerializeAddon } from "@xterm/addon-serialize";
 
 export class ScreenBuffer {
-  private terminal: Terminal;
+  private terminal: InstanceType<typeof Terminal>;
   private serializer: SerializeAddon;
   private dirty = false;
   private cachedContent = "";
