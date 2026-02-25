@@ -2,6 +2,7 @@
   "name": "@workflow-manager/cli",
   "version": "0.0.1",
   "private": true,
+  "type": "module",
   "nx": {
     "name": "cli",
     "targets": {
@@ -18,7 +19,7 @@
             "cjs"
           ],
           "bundle": false,
-          "main": "apps/cli/src/main.ts",
+          "main": "apps/cli/src/main.tsx",
           "tsConfig": "apps/cli/tsconfig.app.json",
           "assets": [
             "apps/cli/src/assets"
