@@ -1,5 +1,23 @@
 export type SessionStatus = "running" | "idle" | "waiting" | "stopped";
 
+// Azure DevOps PR types
+export type ReviewerVote = 10 | 5 | 0 | -5 | -10;
+
+export interface PullRequestReviewer {
+  displayName: string;
+  vote: ReviewerVote;
+}
+
+export interface PullRequestInfo {
+  pullRequestId: number;
+  sourceBranch: string;
+  isDraft: boolean;
+  reviewers: PullRequestReviewer[];
+  activeCommentCount: number;
+}
+
+export type BranchPrMap = Record<string, PullRequestInfo | null>;
+
 export interface Session {
   /** Unique session name (also used as tmux session name) */
   name: string;
@@ -30,6 +48,8 @@ export interface Config {
   repo?: string;
   /** capture-pane polling interval in ms */
   pollInterval: number;
+  /** PR data polling interval in ms */
+  prPollInterval?: number;
 }
 
 export const DEFAULT_CONFIG: Config = {
