@@ -10,16 +10,27 @@ import {
   sendKeys,
   sendLiteral,
   listSessions,
+  branchToSessionName,
+  listBranches,
+  createWorktree,
+  removeWorktree,
+  canRemoveBranch,
 } from "./tmux.js";
 import { execFile, execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 vi.mock("node:child_process", () => ({
   execSync: vi.fn(),
   execFile: vi.fn(),
 }));
 
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(() => false),
+}));
+
 const mockExecSync = vi.mocked(execSync);
 const mockExecFile = vi.mocked(execFile);
+const mockExistsSync = vi.mocked(existsSync);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -261,6 +272,198 @@ describe("sendLiteral", () => {
       return undefined as any;
     });
     expect(() => sendLiteral("my-session", "hello")).not.toThrow();
+  });
+});
+
+describe("createSession with command", () => {
+  it("should append command to tmux new-session", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(createSession("my-session", 120, 40, "claude --worktree main")).toBe(
+      true
+    );
+    expect(mockExecSync).toHaveBeenCalledWith(
+      "tmux new-session -d -s my-session -x 120 -y 40 claude --worktree main",
+      { stdio: "ignore" }
+    );
+  });
+
+  it("should work with command but no dimensions", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(createSession("my-session", undefined, undefined, "bash")).toBe(
+      true
+    );
+    expect(mockExecSync).toHaveBeenCalledWith(
+      "tmux new-session -d -s my-session bash",
+      { stdio: "ignore" }
+    );
+  });
+});
+
+describe("branchToSessionName", () => {
+  it("should replace slashes with hyphens", () => {
+    expect(branchToSessionName("feature/auth")).toBe("feature-auth");
+  });
+
+  it("should handle multiple slashes", () => {
+    expect(branchToSessionName("feat/ui/sidebar")).toBe("feat-ui-sidebar");
+  });
+
+  it("should return names without slashes unchanged", () => {
+    expect(branchToSessionName("main")).toBe("main");
+  });
+
+  it("should handle empty string", () => {
+    expect(branchToSessionName("")).toBe("");
+  });
+});
+
+describe("listBranches", () => {
+  it("should parse git branch output into array", () => {
+    mockExecSync.mockReturnValueOnce("main\nfeature/auth\nfix/bug-123\n");
+    const branches = listBranches();
+    expect(branches).toEqual(["main", "feature/auth", "fix/bug-123"]);
+  });
+
+  it("should return empty array when git fails", () => {
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error("not a git repository");
+    });
+    expect(listBranches()).toEqual([]);
+  });
+
+  it("should filter out empty lines", () => {
+    mockExecSync.mockReturnValueOnce("main\n\ndev\n");
+    expect(listBranches()).toEqual(["main", "dev"]);
+  });
+});
+
+describe("createSession with cwd", () => {
+  it("should include -c flag when cwd is provided", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(createSession("my-session", 120, 40, "claude", "/home/user/worktree")).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'tmux new-session -d -s my-session -x 120 -y 40 -c "/home/user/worktree" claude',
+      { stdio: "ignore" }
+    );
+  });
+
+  it("should work with cwd but no command", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(createSession("my-session", 120, 40, undefined, "/home/user/worktree")).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'tmux new-session -d -s my-session -x 120 -y 40 -c "/home/user/worktree"',
+      { stdio: "ignore" }
+    );
+  });
+
+  it("should handle paths with spaces in cwd", () => {
+    mockExecSync.mockReturnValueOnce(Buffer.from(""));
+    expect(createSession("my-session", 120, 40, "claude", "/home/user/JBT Marel/worktree")).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'tmux new-session -d -s my-session -x 120 -y 40 -c "/home/user/JBT Marel/worktree" claude',
+      { stdio: "ignore" }
+    );
+  });
+});
+
+describe("createWorktree", () => {
+  it("should return absolute path for existing branch", () => {
+    mockExecSync.mockReturnValueOnce("");
+    const result = createWorktree("feature/auth");
+    expect(result).toContain(".tui/worktrees/feature-auth");
+    expect(result).toMatch(/^\//); // absolute path
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'git worktree add ".tui/worktrees/feature-auth" "feature/auth"',
+      { encoding: "utf8", stdio: "pipe" }
+    );
+  });
+
+  it("should fall back to -b for new branch", () => {
+    mockExecSync
+      .mockImplementationOnce(() => { throw new Error("branch not found"); })
+      .mockReturnValueOnce("");
+    const result = createWorktree("new-branch");
+    expect(result).toContain(".tui/worktrees/new-branch");
+    expect(mockExecSync).toHaveBeenCalledTimes(2);
+    expect(mockExecSync).toHaveBeenLastCalledWith(
+      'git worktree add -b "new-branch" ".tui/worktrees/new-branch"',
+      { encoding: "utf8", stdio: "pipe" }
+    );
+  });
+
+  it("should return null when both attempts fail", () => {
+    mockExecSync
+      .mockImplementationOnce(() => { throw new Error("fail"); })
+      .mockImplementationOnce(() => { throw new Error("fail"); });
+    expect(createWorktree("bad-branch")).toBeNull();
+  });
+
+  it("should return existing path without calling git when worktree already exists", () => {
+    mockExistsSync.mockReturnValueOnce(true);
+    const result = createWorktree("feature/auth");
+    expect(result).toContain(".tui/worktrees/feature-auth");
+    expect(result).toMatch(/^\//);
+    expect(mockExecSync).not.toHaveBeenCalled();
+  });
+});
+
+describe("removeWorktree", () => {
+  it("should return true on success", () => {
+    mockExecSync.mockReturnValueOnce("");
+    expect(removeWorktree("feature/auth")).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'git worktree remove ".tui/worktrees/feature-auth"',
+      { encoding: "utf8", stdio: "pipe" }
+    );
+  });
+
+  it("should return false on failure", () => {
+    mockExecSync.mockImplementationOnce(() => { throw new Error("not found"); });
+    expect(removeWorktree("nonexistent")).toBe(false);
+  });
+});
+
+describe("canRemoveBranch", () => {
+  it("should reject main as protected", () => {
+    expect(canRemoveBranch("main")).toEqual({ safe: false, reason: "protected branch" });
+  });
+
+  it("should reject master as protected", () => {
+    expect(canRemoveBranch("master")).toEqual({ safe: false, reason: "protected branch" });
+  });
+
+  it("should reject gitbutler branches as protected", () => {
+    expect(canRemoveBranch("gitbutler/integration")).toEqual({ safe: false, reason: "protected branch" });
+  });
+
+  it("should reject branches with uncommitted changes", () => {
+    // git -C status --porcelain returns dirty files
+    mockExecSync.mockReturnValueOnce(" M src/file.ts\n");
+    expect(canRemoveBranch("feature/dirty")).toEqual({ safe: false, reason: "uncommitted changes" });
+  });
+
+  it("should reject branches not pushed to upstream", () => {
+    // git -C status --porcelain returns clean
+    mockExecSync.mockReturnValueOnce("");
+    // git log --not --remotes returns unpushed commit
+    mockExecSync.mockReturnValueOnce("abc1234 some commit\n");
+    expect(canRemoveBranch("feature/unpushed")).toEqual({ safe: false, reason: "not pushed to upstream" });
+  });
+
+  it("should return safe for clean, pushed branches", () => {
+    // git -C status --porcelain returns clean
+    mockExecSync.mockReturnValueOnce("");
+    // git log --not --remotes returns empty
+    mockExecSync.mockReturnValueOnce("");
+    expect(canRemoveBranch("feature/done")).toEqual({ safe: true });
+  });
+
+  it("should skip checks gracefully when worktree does not exist", () => {
+    // git -C status fails (no worktree)
+    mockExecSync.mockImplementationOnce(() => { throw new Error("not a directory"); });
+    // git log --not --remotes returns empty
+    mockExecSync.mockReturnValueOnce("");
+    expect(canRemoveBranch("feature/no-worktree")).toEqual({ safe: true });
   });
 });
 

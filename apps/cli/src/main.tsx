@@ -1,10 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { execSync } from "node:child_process";
 import { render, Text, Box, useInput, useApp, useStdout, type Key } from "ink";
 import {
   isAvailable,
   listSessions,
   killSession,
   createSession,
+  createWorktree,
+  removeWorktree,
+  canRemoveBranch,
+  listBranches,
+  branchToSessionName,
 } from "@workflow-manager/tmux-manager";
 import type { TmuxSession } from "@workflow-manager/tmux-manager";
 import { ControlConnection } from "@workflow-manager/tmux-control";
@@ -80,6 +86,71 @@ function TerminalView({
       </Text>
       <Text dimColor>{"─".repeat(40)}</Text>
       <Text wrap="truncate">{content}</Text>
+    </Box>
+  );
+}
+
+function BranchPicker({
+  filter,
+  branches,
+  selectedIndex,
+}: {
+  filter: string;
+  branches: string[];
+  selectedIndex: number;
+}) {
+  const filtered = branches.filter((b) =>
+    b.toLowerCase().includes(filter.toLowerCase())
+  );
+  const hasExactMatch = branches.some(
+    (b) => b.toLowerCase() === filter.toLowerCase()
+  );
+
+  return (
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      borderStyle="round"
+      borderColor="yellow"
+      paddingX={1}
+      overflow="hidden"
+    >
+      <Text bold color="yellow">
+        Branch Picker
+      </Text>
+      <Text dimColor>{"─".repeat(40)}</Text>
+      {filtered.length === 0 ? (
+        <Box flexDirection="column">
+          {filter.length > 0 ? (
+            <Text color="yellow">
+              (new branch) <Text bold>{filter}</Text>
+            </Text>
+          ) : (
+            <Text dimColor>Type to filter branches...</Text>
+          )}
+        </Box>
+      ) : (
+        <Box flexDirection="column">
+          {filtered.map((b, i) => {
+            const isSelected = i === selectedIndex;
+            return (
+              <Text key={b}>
+                <Text color={isSelected ? "cyan" : undefined}>
+                  {isSelected ? "› " : "  "}
+                </Text>
+                <Text bold={isSelected}>{b}</Text>
+              </Text>
+            );
+          })}
+          {filter.length > 0 && !hasExactMatch && (
+            <Box marginTop={1}>
+              <Text dimColor>
+                Enter to create: <Text color="yellow">{filter}</Text>
+              </Text>
+            </Box>
+          )}
+        </Box>
+      )}
     </Box>
   );
 }
@@ -228,18 +299,25 @@ function App() {
   const [paneContent, setPaneContent] = useState("(loading...)");
   const [hasTmux, setHasTmux] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
+  const [branchFilter, setBranchFilter] = useState("");
+  const [branchIndex, setBranchIndex] = useState(0);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ branch: string; sessionName: string; reason: string } | null>(null);
+  const [confirmInput, setConfirmInput] = useState("");
 
   const selectedSession = sessions[selectedIndex];
   const selectedName = selectedSession?.name ?? null;
 
-  // Check tmux availability and load sessions on mount
+  // Check tmux availability, load sessions and branches on mount
   useEffect(() => {
     const ok = isAvailable();
     setHasTmux(ok);
     if (ok) {
       setSessions(listSessions());
     }
+    setBranches(listBranches());
   }, []);
 
   // Refresh function used after create/kill
@@ -247,6 +325,28 @@ function App() {
     const updated = listSessions();
     setSessions(updated);
     return updated;
+  };
+
+  // Show a temporary status message for 3 seconds
+  const flashStatus = (msg: string) => {
+    if (statusTimer.current) clearTimeout(statusTimer.current);
+    setStatusMessage(msg);
+    statusTimer.current = setTimeout(() => setStatusMessage(null), 3000);
+  };
+
+  // Perform the actual session + worktree + branch deletion
+  const performDelete = (sessionName: string, branch: string) => {
+    killSession(sessionName);
+    removeWorktree(branch);
+    try {
+      execSync(`git branch -d "${branch}"`, { stdio: "pipe" });
+    } catch {
+      // Branch delete may fail if not fully merged — that's ok, worktree is gone
+    }
+    const updated = refreshSessions();
+    if (selectedIndex >= updated.length) {
+      setSelectedIndex(Math.max(0, updated.length - 1));
+    }
   };
 
   // Control mode connection for selected session
@@ -258,32 +358,83 @@ function App() {
   );
 
   useInput((input, key) => {
-    // Creating mode — capture name input
+    // Branch picker mode
     if (creating) {
       if (key.escape) {
         setCreating(false);
-        setNewName("");
+        setBranchFilter("");
+        setBranchIndex(0);
         return;
       }
+
+      const filtered = branches.filter((b) =>
+        b.toLowerCase().includes(branchFilter.toLowerCase())
+      );
+
+      if (key.upArrow) {
+        setBranchIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (key.downArrow) {
+        setBranchIndex((i) => Math.min(i + 1, filtered.length - 1));
+        return;
+      }
+
       if (key.return) {
-        const name = newName.trim();
-        if (name) {
-          createSession(name, paneCols, paneRows);
-          const updated = refreshSessions();
-          // Select the newly created session
-          const idx = updated.findIndex((s) => s.name === name);
-          if (idx >= 0) setSelectedIndex(idx);
+        // Pick the selected branch, or use typed text as new branch name
+        const branch =
+          filtered.length > 0 ? filtered[branchIndex]! : branchFilter.trim();
+        if (branch) {
+          const worktreePath = createWorktree(branch);
+          if (worktreePath) {
+            const sessionName = branchToSessionName(branch);
+            createSession(sessionName, paneCols, paneRows, "claude", worktreePath);
+            const updated = refreshSessions();
+            const idx = updated.findIndex((s) => s.name === sessionName);
+            if (idx >= 0) setSelectedIndex(idx);
+          }
         }
         setCreating(false);
-        setNewName("");
+        setBranchFilter("");
+        setBranchIndex(0);
         return;
       }
+
       if (key.backspace || key.delete) {
-        setNewName((n) => n.slice(0, -1));
+        setBranchFilter((f) => f.slice(0, -1));
+        setBranchIndex(0);
         return;
       }
       if (input && !key.ctrl && !key.meta) {
-        setNewName((n) => n + input);
+        setBranchFilter((f) => f + input);
+        setBranchIndex(0);
+      }
+      return;
+    }
+
+    // Confirm delete mode — user must type branch name to proceed
+    if (confirmDelete) {
+      if (key.escape) {
+        setConfirmDelete(null);
+        setConfirmInput("");
+        return;
+      }
+      if (key.return) {
+        if (confirmInput === confirmDelete.branch) {
+          performDelete(confirmDelete.sessionName, confirmDelete.branch);
+        } else {
+          flashStatus("Branch name did not match — delete cancelled");
+        }
+        setConfirmDelete(null);
+        setConfirmInput("");
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setConfirmInput((v) => v.slice(0, -1));
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) {
+        setConfirmInput((v) => v + input);
       }
       return;
     }
@@ -308,15 +459,38 @@ function App() {
         return;
       }
       if (input === "n") {
+        setBranches(listBranches());
         setCreating(true);
-        setNewName("");
+        setBranchFilter("");
+        setBranchIndex(0);
         return;
       }
       if (input === "d" && selectedSession) {
-        killSession(selectedSession.name);
-        const updated = refreshSessions();
-        if (selectedIndex >= updated.length) {
-          setSelectedIndex(Math.max(0, updated.length - 1));
+        const sessionName = selectedSession.name;
+        const currentBranches = listBranches();
+        const branch = currentBranches.find(
+          (b) => branchToSessionName(b) === sessionName
+        );
+        if (branch) {
+          const check = canRemoveBranch(branch);
+          if (!check.safe) {
+            if (check.reason === "not pushed to upstream" || check.reason === "uncommitted changes") {
+              // Ask user to type branch name to confirm
+              setConfirmDelete({ branch, sessionName, reason: check.reason });
+              setConfirmInput("");
+            } else {
+              flashStatus(`Cannot delete: ${check.reason}`);
+            }
+            return;
+          }
+          performDelete(sessionName, branch);
+        } else {
+          // No matching branch found — just kill the session
+          killSession(sessionName);
+          const updated = refreshSessions();
+          if (selectedIndex >= updated.length) {
+            setSelectedIndex(Math.max(0, updated.length - 1));
+          }
         }
         return;
       }
@@ -338,19 +512,39 @@ function App() {
         <Sidebar
           sessions={sessions}
           selectedIndex={selectedIndex}
-          focused={focus === "sidebar"}
+          focused={focus === "sidebar" && !creating}
         />
-        <TerminalView
-          content={hasTmux ? paneContent : "(tmux not available)"}
-          focused={focus === "terminal"}
-        />
+        {creating ? (
+          <BranchPicker
+            filter={branchFilter}
+            branches={branches}
+            selectedIndex={branchIndex}
+          />
+        ) : (
+          <TerminalView
+            content={hasTmux ? paneContent : "(tmux not available)"}
+            focused={focus === "terminal"}
+          />
+        )}
       </Box>
       <Box paddingX={1}>
-        {creating ? (
+        {confirmDelete ? (
           <Text>
-            New session name: <Text color="cyan">{newName}</Text>
+            <Text color="red">Warning: {confirmDelete.reason}. Type </Text>
+            <Text bold color="yellow">{confirmDelete.branch}</Text>
+            <Text color="red"> to confirm: </Text>
+            <Text color="cyan">{confirmInput}</Text>
             <Text dimColor>_</Text>
+            <Text dimColor> · Esc cancel</Text>
           </Text>
+        ) : creating ? (
+          <Text>
+            Branch: <Text color="cyan">{branchFilter}</Text>
+            <Text dimColor>_</Text>
+            <Text dimColor> · Enter select · Esc cancel</Text>
+          </Text>
+        ) : statusMessage ? (
+          <Text color="red">{statusMessage}</Text>
         ) : (
           <Text dimColor>
             workflow-manager · {sessions.length} sessions ·{" "}

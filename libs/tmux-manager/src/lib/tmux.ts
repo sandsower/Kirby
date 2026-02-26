@@ -7,6 +7,8 @@
  * for simpler calling code.
  */
 import { execFile, execSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 
 export interface TmuxSession {
   name: string;
@@ -87,12 +89,16 @@ export function hasSession(name: string): boolean {
 export function createSession(
   name: string,
   cols?: number,
-  rows?: number
+  rows?: number,
+  command?: string,
+  cwd?: string
 ): boolean {
   const safeName = validateSessionName(name);
   let cmd = `tmux new-session -d -s ${safeName}`;
   if (cols !== undefined) cmd += ` -x ${cols}`;
   if (rows !== undefined) cmd += ` -y ${rows}`;
+  if (cwd !== undefined) cmd += ` -c "${cwd}"`;
+  if (command !== undefined) cmd += ` ${command}`;
   try {
     execSync(cmd, { stdio: "ignore" });
     return true;
@@ -147,6 +153,125 @@ export function sendKeys(name: string, keys: string): void {
 export function sendLiteral(name: string, text: string): void {
   const safeName = validateSessionName(name);
   execFile("tmux", ["send-keys", "-t", safeName, "-l", "--", text], () => {});
+}
+
+/** Convert a git branch name to a valid tmux session name (replace / with -) */
+export function branchToSessionName(branch: string): string {
+  return branch.replace(/\//g, "-");
+}
+
+/**
+ * Create a git worktree for a branch.
+ * If the branch exists, checks it out. If not, creates a new branch from HEAD.
+ * Returns the worktree path on success, null on failure.
+ */
+export function createWorktree(branch: string): string | null {
+  const relativeDir = ".tui/worktrees/" + branch.replace(/\//g, "-");
+  const absoluteDir = resolve(process.cwd(), relativeDir);
+
+  // Worktree already exists — just return the path
+  if (existsSync(relativeDir)) {
+    return absoluteDir;
+  }
+
+  try {
+    // Try existing branch first
+    execSync(`git worktree add "${relativeDir}" "${branch}"`, {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    return absoluteDir;
+  } catch {
+    try {
+      // Branch doesn't exist — create new branch from HEAD
+      execSync(`git worktree add -b "${branch}" "${relativeDir}"`, {
+        encoding: "utf8",
+        stdio: "pipe",
+      });
+      return absoluteDir;
+    } catch {
+      return null;
+    }
+  }
+}
+
+/**
+ * Remove a git worktree for a branch.
+ * Returns true on success, false on failure.
+ */
+export function removeWorktree(branch: string): boolean {
+  const relativeDir = ".tui/worktrees/" + branch.replace(/\//g, "-");
+  try {
+    execSync(`git worktree remove "${relativeDir}"`, {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check whether a branch can be safely deleted.
+ * Returns { safe: true } or { safe: false, reason: string }.
+ */
+export function canRemoveBranch(
+  branch: string
+): { safe: true } | { safe: false; reason: string } {
+  // Protected branch guard
+  if (
+    branch === "main" ||
+    branch === "master" ||
+    branch.startsWith("gitbutler")
+  ) {
+    return { safe: false, reason: "protected branch" };
+  }
+
+  const worktreeDir = ".tui/worktrees/" + branch.replace(/\//g, "-");
+
+  // Uncommitted changes
+  try {
+    const status = execSync(`git -C "${worktreeDir}" status --porcelain`, {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    if (status.trim().length > 0) {
+      return { safe: false, reason: "uncommitted changes" };
+    }
+  } catch {
+    // Worktree may not exist — skip this check
+  }
+
+  // Not pushed to upstream
+  try {
+    const unpushed = execSync(
+      `git log "${branch}" --not --remotes -1`,
+      { encoding: "utf8", stdio: "pipe" }
+    );
+    if (unpushed.trim().length > 0) {
+      return { safe: false, reason: "not pushed to upstream" };
+    }
+  } catch {
+    // Branch may not have remote tracking — skip
+  }
+
+  return { safe: true };
+}
+
+/** List local git branches */
+export function listBranches(): string[] {
+  try {
+    const output = execSync("git branch --format='%(refname:short)'", {
+      encoding: "utf8",
+    });
+    return output
+      .trim()
+      .split("\n")
+      .filter((b) => b.length > 0);
+  } catch {
+    return [];
+  }
 }
 
 /** Validate a tmux session name (alphanumeric, hyphens, underscores, dots) */
