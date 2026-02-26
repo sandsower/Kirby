@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { execSync } from "node:child_process";
 import { render, Text, Box, useInput, useApp, useStdout, type Key } from "ink";
 import {
@@ -35,6 +35,7 @@ function Sidebar({
   prMap,
   adoConfigured,
   sidebarWidth,
+  orphanPrs,
 }: {
   sessions: TmuxSession[];
   selectedIndex: number;
@@ -42,6 +43,7 @@ function Sidebar({
   prMap: BranchPrMap;
   adoConfigured: boolean;
   sidebarWidth: number;
+  orphanPrs: PullRequestInfo[];
 }) {
   // inner width = sidebarWidth - 2 (border) - 2 (paddingX)
   const innerWidth = Math.max(10, sidebarWidth - 4);
@@ -83,9 +85,34 @@ function Sidebar({
           );
         })
       )}
+      {orphanPrs.length > 0 && (
+        <>
+          <Box marginTop={1}>
+            <Text bold color={focused ? "blue" : "gray"}>
+              Pull Requests
+            </Text>
+          </Box>
+          <Text dimColor>{"─".repeat(innerWidth)}</Text>
+          {orphanPrs.map((pr, i) => {
+            const globalIndex = sessions.length + i;
+            const selected = globalIndex === selectedIndex;
+            return (
+              <Box key={pr.pullRequestId} flexDirection="column">
+                <Text>
+                  <Text color={selected ? "cyan" : undefined}>
+                    {selected ? "› " : "  "}
+                  </Text>
+                  <Text bold={selected}>{pr.sourceBranch}</Text>
+                </Text>
+                <PrBadge pr={pr} />
+              </Box>
+            );
+          })}
+        </>
+      )}
       <Box marginTop={1}>
         <Text dimColor>
-          n new · d kill · j/k · Tab · s cfg · q quit
+          n new · d kill · Enter open · j/k · Tab · s cfg · q quit
         </Text>
       </Box>
     </Box>
@@ -286,6 +313,7 @@ const SETTINGS_FIELDS: SettingsField[] = [
   { label: "Project", key: "project" },
   { label: "Repository", key: "repo" },
   { label: "PAT", key: "pat", masked: true },
+  { label: "Email", key: "email" },
 ];
 
 function SettingsPanel({
@@ -502,8 +530,29 @@ function App() {
   const [editBuffer, setEditBuffer] = useState("");
   const { prMap, error: prError, refresh: refreshPr } = usePrData(config);
 
-  const selectedSession = sessions[selectedIndex];
+  // Orphan PRs: user's PRs that don't have a matching tmux session
+  const orphanPrs = useMemo(() => {
+    if (!config.email) return [];
+    const sessionNames = new Set(sessions.map((s) => s.name));
+    return Object.values(prMap)
+      .filter((pr): pr is PullRequestInfo => {
+        if (!pr) return false;
+        if (!pr.createdByUniqueName) return false;
+        if (pr.createdByUniqueName.toLowerCase() !== config.email!.toLowerCase()) return false;
+        return !sessionNames.has(branchToSessionName(pr.sourceBranch));
+      });
+  }, [prMap, sessions, config.email]);
+
+  const totalItems = sessions.length + orphanPrs.length;
+  const selectedSession = selectedIndex < sessions.length ? sessions[selectedIndex] : undefined;
   const selectedName = selectedSession?.name ?? null;
+
+  // Clamp selectedIndex when total items shrinks
+  useEffect(() => {
+    if (totalItems > 0 && selectedIndex >= totalItems) {
+      setSelectedIndex(totalItems - 1);
+    }
+  }, [totalItems, selectedIndex]);
 
   // Check tmux availability, load sessions and branches on mount
   useEffect(() => {
@@ -513,9 +562,28 @@ function App() {
       setSessions(listSessions());
     }
     setBranches(listBranches());
+
+    // Auto-detect email from git config if not already set
+    if (!config.email) {
+      try {
+        const email = execSync("git config user.email", {
+          encoding: "utf8",
+          stdio: "pipe",
+        }).trim();
+        if (email) {
+          const newConfig = { ...config, email };
+          setConfig(newConfig);
+          writeConfig(newConfig);
+        }
+      } catch {
+        // git config may fail — not critical
+      }
+    }
+
     return () => {
       if (statusTimer.current) clearTimeout(statusTimer.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Refresh function used after create/kill
@@ -778,10 +846,24 @@ function App() {
         return;
       }
       if (input === "j" || key.downArrow) {
-        setSelectedIndex((i) => Math.min(i + 1, sessions.length - 1));
+        setSelectedIndex((i) => Math.min(i + 1, totalItems - 1));
       }
       if (input === "k" || key.upArrow) {
         setSelectedIndex((i) => Math.max(i - 1, 0));
+      }
+      if (key.return && selectedIndex >= sessions.length && orphanPrs.length > 0) {
+        const prIndex = selectedIndex - sessions.length;
+        const pr = orphanPrs[prIndex];
+        if (pr) {
+          const worktreePath = createWorktree(pr.sourceBranch);
+          if (worktreePath) {
+            const sessionName = branchToSessionName(pr.sourceBranch);
+            createSession(sessionName, paneCols, paneRows, "claude", worktreePath);
+            const updated = refreshSessions();
+            const idx = updated.findIndex((s) => s.name === sessionName);
+            if (idx >= 0) setSelectedIndex(idx);
+          }
+        }
       }
     } else {
       // Terminal focused — forward input via control mode
@@ -799,6 +881,7 @@ function App() {
           prMap={prMap}
           adoConfigured={adoConfigured}
           sidebarWidth={sidebarWidth}
+          orphanPrs={orphanPrs}
         />
         {settingsOpen ? (
           <SettingsPanel
@@ -820,37 +903,46 @@ function App() {
           />
         )}
       </Box>
-      <Box paddingX={1}>
-        {confirmDelete ? (
-          <Text>
-            <Text color="red">Warning: {confirmDelete.reason}. Type </Text>
-            <Text bold color="yellow">{confirmDelete.branch}</Text>
-            <Text color="red"> to confirm: </Text>
-            <Text color="cyan">{confirmInput}</Text>
-            <Text dimColor>_</Text>
-            <Text dimColor> · Esc cancel</Text>
-          </Text>
-        ) : creating ? (
-          <Text>
-            Branch: <Text color="cyan">{branchFilter}</Text>
-            <Text dimColor>_</Text>
-            <Text dimColor> · Enter select · Esc cancel</Text>
-          </Text>
-        ) : statusMessage ? (
-          <Text color="yellow">{statusMessage}</Text>
-        ) : prError ? (
-          <Text color="red">PR error: {prError}</Text>
-        ) : (
-          <Text dimColor>
-            workflow-manager · {sessions.length} sessions ·{" "}
-            focus: <Text color="cyan">{focus}</Text> · tmux:{" "}
-            {hasTmux ? "✓" : "✕"}
-            {!adoConfigured ? " · (s to configure ADO)" : ""}
-          </Text>
-        )}
+      <Box paddingX={1} justifyContent="space-between">
+        <Box>
+          {confirmDelete ? (
+            <Text>
+              <Text color="red">Warning: {confirmDelete.reason}. Type </Text>
+              <Text bold color="yellow">{confirmDelete.branch}</Text>
+              <Text color="red"> to confirm: </Text>
+              <Text color="cyan">{confirmInput}</Text>
+              <Text dimColor>_</Text>
+              <Text dimColor> · Esc cancel</Text>
+            </Text>
+          ) : creating ? (
+            <Text>
+              Branch: <Text color="cyan">{branchFilter}</Text>
+              <Text dimColor>_</Text>
+              <Text dimColor> · Enter select · Esc cancel</Text>
+            </Text>
+          ) : statusMessage ? (
+            <Text color="yellow">{statusMessage}</Text>
+          ) : prError ? (
+            <Text color="red">PR error: {prError}</Text>
+          ) : (
+            <Text dimColor>
+              workflow-manager · {sessions.length} sessions ·{" "}
+              focus: <Text color="cyan">{focus}</Text> · tmux:{" "}
+              {hasTmux ? "✓" : "✕"}
+              {!adoConfigured ? " · (s to configure ADO)" : ""}
+            </Text>
+          )}
+        </Box>
+        <Text dimColor>{process.cwd()}</Text>
       </Box>
     </Box>
   );
+}
+
+// Optional: pass a path argument to run in a different directory
+const targetDir = process.argv[2];
+if (targetDir) {
+  process.chdir(targetDir);
 }
 
 render(<App />);

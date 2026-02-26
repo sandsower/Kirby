@@ -70,6 +70,7 @@ describe("parsePullRequest", () => {
       sourceBranch: "feature/my-branch",
       isDraft: true,
       reviewers: [{ displayName: "Alice", vote: 10 }],
+      createdByUniqueName: undefined,
     });
   });
 
@@ -87,7 +88,17 @@ describe("parsePullRequest", () => {
       sourceBranch: "",
       isDraft: false,
       reviewers: [],
+      createdByUniqueName: undefined,
     });
+  });
+
+  it("extracts createdBy uniqueName", () => {
+    const result = parsePullRequest({
+      pullRequestId: 99,
+      sourceRefName: "refs/heads/feature/test",
+      createdBy: { uniqueName: "user@example.com" },
+    });
+    expect(result.createdByUniqueName).toBe("user@example.com");
   });
 });
 

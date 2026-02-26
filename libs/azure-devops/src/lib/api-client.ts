@@ -44,6 +44,7 @@ export function parsePullRequest(raw: {
   sourceRefName?: string;
   isDraft?: boolean;
   reviewers?: Array<{ displayName?: string; vote?: number }>;
+  createdBy?: { uniqueName?: string };
 }): Omit<PullRequestInfo, "activeCommentCount"> {
   const branch = (raw.sourceRefName ?? "").replace(/^refs\/heads\//, "");
   return {
@@ -51,6 +52,7 @@ export function parsePullRequest(raw: {
     sourceBranch: branch,
     isDraft: raw.isDraft ?? false,
     reviewers: (raw.reviewers ?? []).map(parseReviewer),
+    createdByUniqueName: raw.createdBy?.uniqueName,
   };
 }
 

@@ -14,6 +14,7 @@ export interface PullRequestInfo {
   isDraft: boolean;
   reviewers: PullRequestReviewer[];
   activeCommentCount: number;
+  createdByUniqueName?: string;
 }
 
 export type BranchPrMap = Record<string, PullRequestInfo | null>;
@@ -46,6 +47,8 @@ export interface Config {
   project?: string;
   /** Default repository name */
   repo?: string;
+  /** User email (for filtering own PRs) */
+  email?: string;
   /** capture-pane polling interval in ms */
   pollInterval: number;
   /** PR data polling interval in ms */
