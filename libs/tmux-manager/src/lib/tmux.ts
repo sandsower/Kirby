@@ -17,6 +17,12 @@ export interface TmuxSession {
   attached: boolean;
 }
 
+export interface WorktreeInfo {
+  path: string;
+  branch: string; // short branch name (no refs/heads/)
+  bare: boolean;
+}
+
 /** Check if tmux is installed and available */
 export function isAvailable(): boolean {
   try {
@@ -269,6 +275,52 @@ export function listBranches(): string[] {
       .trim()
       .split("\n")
       .filter((b) => b.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/** Parse `git worktree list --porcelain` output into WorktreeInfo[] */
+export function parseWorktrees(output: string): WorktreeInfo[] {
+  const results: WorktreeInfo[] = [];
+  const blocks = output.split("\n\n").filter((b) => b.trim().length > 0);
+
+  for (const block of blocks) {
+    const lines = block.trim().split("\n");
+    let path = "";
+    let branch = "";
+    let bare = false;
+
+    for (const line of lines) {
+      if (line.startsWith("worktree ")) {
+        path = line.slice("worktree ".length);
+      } else if (line.startsWith("branch refs/heads/")) {
+        branch = line.slice("branch refs/heads/".length);
+      } else if (line === "bare") {
+        bare = true;
+      }
+    }
+
+    if (path) {
+      results.push({ path, branch, bare });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * List git worktrees under .tui/worktrees/ for the current repo.
+ * Skips the main worktree and bare entries.
+ */
+export function listWorktrees(): WorktreeInfo[] {
+  try {
+    const output = execSync("git worktree list --porcelain", {
+      encoding: "utf8",
+    });
+    return parseWorktrees(output).filter(
+      (w) => !w.bare && w.path.includes(".tui/worktrees/")
+    );
   } catch {
     return [];
   }

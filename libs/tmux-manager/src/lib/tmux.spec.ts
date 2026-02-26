@@ -15,6 +15,8 @@ import {
   createWorktree,
   removeWorktree,
   canRemoveBranch,
+  parseWorktrees,
+  listWorktrees,
 } from "./tmux.js";
 import { execFile, execSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -464,6 +466,122 @@ describe("canRemoveBranch", () => {
     // git log --not --remotes returns empty
     mockExecSync.mockReturnValueOnce("");
     expect(canRemoveBranch("feature/no-worktree")).toEqual({ safe: true });
+  });
+});
+
+describe("parseWorktrees", () => {
+  it("should parse multiple worktrees from porcelain output", () => {
+    const output = [
+      "worktree /home/user/repo",
+      "HEAD abc123",
+      "branch refs/heads/main",
+      "",
+      "worktree /home/user/repo/.tui/worktrees/feature-auth",
+      "HEAD def456",
+      "branch refs/heads/feature/auth",
+      "",
+      "worktree /home/user/repo/.tui/worktrees/fix-bug",
+      "HEAD 789abc",
+      "branch refs/heads/fix/bug",
+      "",
+    ].join("\n");
+
+    const result = parseWorktrees(output);
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({
+      path: "/home/user/repo",
+      branch: "main",
+      bare: false,
+    });
+    expect(result[1]).toEqual({
+      path: "/home/user/repo/.tui/worktrees/feature-auth",
+      branch: "feature/auth",
+      bare: false,
+    });
+    expect(result[2]).toEqual({
+      path: "/home/user/repo/.tui/worktrees/fix-bug",
+      branch: "fix/bug",
+      bare: false,
+    });
+  });
+
+  it("should handle bare worktrees", () => {
+    const output = [
+      "worktree /home/user/repo",
+      "HEAD abc123",
+      "bare",
+      "",
+    ].join("\n");
+
+    const result = parseWorktrees(output);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.bare).toBe(true);
+    expect(result[0]!.branch).toBe("");
+  });
+
+  it("should return empty array for empty output", () => {
+    expect(parseWorktrees("")).toEqual([]);
+    expect(parseWorktrees("\n")).toEqual([]);
+  });
+});
+
+describe("listWorktrees", () => {
+  it("should return only .tui/worktrees/ entries, excluding main worktree", () => {
+    mockExecSync.mockReturnValueOnce(
+      [
+        "worktree /home/user/repo",
+        "HEAD abc123",
+        "branch refs/heads/main",
+        "",
+        "worktree /home/user/repo/.tui/worktrees/feature-auth",
+        "HEAD def456",
+        "branch refs/heads/feature/auth",
+        "",
+      ].join("\n")
+    );
+
+    const result = listWorktrees();
+    expect(result).toHaveLength(1);
+    expect(result[0]!.branch).toBe("feature/auth");
+  });
+
+  it("should filter out bare worktrees", () => {
+    mockExecSync.mockReturnValueOnce(
+      [
+        "worktree /home/user/repo",
+        "HEAD abc123",
+        "bare",
+        "",
+        "worktree /home/user/repo/.tui/worktrees/feature-auth",
+        "HEAD def456",
+        "branch refs/heads/feature/auth",
+        "",
+      ].join("\n")
+    );
+
+    const result = listWorktrees();
+    expect(result).toHaveLength(1);
+    expect(result[0]!.branch).toBe("feature/auth");
+  });
+
+  it("should return empty array when git fails", () => {
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error("not a git repository");
+    });
+    expect(listWorktrees()).toEqual([]);
+  });
+
+  it("should return empty array when no worktrees exist", () => {
+    mockExecSync.mockReturnValueOnce(
+      [
+        "worktree /home/user/repo",
+        "HEAD abc123",
+        "branch refs/heads/main",
+        "",
+      ].join("\n")
+    );
+
+    expect(listWorktrees()).toEqual([]);
   });
 });
 

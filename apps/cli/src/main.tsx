@@ -10,6 +10,7 @@ import {
   removeWorktree,
   canRemoveBranch,
   listBranches,
+  listWorktrees,
   branchToSessionName,
 } from "@workflow-manager/tmux-manager";
 import type { TmuxSession } from "@workflow-manager/tmux-manager";
@@ -530,7 +531,7 @@ function App() {
   const [editBuffer, setEditBuffer] = useState("");
   const { prMap, error: prError, refresh: refreshPr } = usePrData(config);
 
-  // Orphan PRs: user's PRs that don't have a matching tmux session
+  // Orphan PRs: user's PRs that don't have a matching session (worktree-backed or tmux)
   const orphanPrs = useMemo(() => {
     if (!config.email) return [];
     const sessionNames = new Set(sessions.map((s) => s.name));
@@ -539,6 +540,7 @@ function App() {
         if (!pr) return false;
         if (!pr.createdByUniqueName) return false;
         if (pr.createdByUniqueName.toLowerCase() !== config.email!.toLowerCase()) return false;
+        // Exclude PRs whose branch already appears in the sessions list (derived from worktrees)
         return !sessionNames.has(branchToSessionName(pr.sourceBranch));
       });
   }, [prMap, sessions, config.email]);
@@ -559,7 +561,7 @@ function App() {
     const ok = isAvailable();
     setHasTmux(ok);
     if (ok) {
-      setSessions(listSessions());
+      refreshSessions();
     }
     setBranches(listBranches());
 
@@ -586,11 +588,23 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh function used after create/kill
+  // Refresh sessions by cross-referencing worktrees with live tmux sessions
   const refreshSessions = () => {
-    const updated = listSessions();
-    setSessions(updated);
-    return updated;
+    const worktrees = listWorktrees();
+    const allTmux = listSessions();
+    const filtered: TmuxSession[] = [];
+    for (const wt of worktrees) {
+      const name = branchToSessionName(wt.branch);
+      const live = allTmux.find((s) => s.name === name);
+      if (live) {
+        filtered.push(live);
+      } else {
+        // Worktree exists but no tmux session — show as stopped
+        filtered.push({ name, windows: 0, created: 0, attached: false });
+      }
+    }
+    setSessions(filtered);
+    return filtered;
   };
 
   // Show a temporary status message for 3 seconds
