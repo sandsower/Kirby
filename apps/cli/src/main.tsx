@@ -14,6 +14,15 @@ import {
 } from "@workflow-manager/tmux-manager";
 import type { TmuxSession } from "@workflow-manager/tmux-manager";
 import { ControlConnection } from "@workflow-manager/tmux-control";
+import {
+  fetchPullRequestsWithComments,
+  readConfig,
+  writeConfig,
+  isAdoConfigured,
+  parseAdoRemoteUrl,
+} from "@workflow-manager/azure-devops";
+import type { AdoConfig } from "@workflow-manager/azure-devops";
+import type { BranchPrMap, PullRequestInfo, Config } from "@workflow-manager/shared-types";
 
 // --- Components ---
 
@@ -23,15 +32,23 @@ function Sidebar({
   sessions,
   selectedIndex,
   focused,
+  prMap,
+  adoConfigured,
+  sidebarWidth,
 }: {
   sessions: TmuxSession[];
   selectedIndex: number;
   focused: boolean;
+  prMap: BranchPrMap;
+  adoConfigured: boolean;
+  sidebarWidth: number;
 }) {
+  // inner width = sidebarWidth - 2 (border) - 2 (paddingX)
+  const innerWidth = Math.max(10, sidebarWidth - 4);
   return (
     <Box
       flexDirection="column"
-      width={24}
+      width={sidebarWidth}
       borderStyle="round"
       borderColor={focused ? "blue" : "gray"}
       paddingX={1}
@@ -39,7 +56,7 @@ function Sidebar({
       <Text bold color={focused ? "blue" : "gray"}>
         Sessions
       </Text>
-      <Text dimColor>{"─".repeat(20)}</Text>
+      <Text dimColor>{"─".repeat(innerWidth)}</Text>
       {sessions.length === 0 ? (
         <Text dimColor>(no sessions)</Text>
       ) : (
@@ -47,19 +64,29 @@ function Sidebar({
           const selected = i === selectedIndex;
           const icon = s.attached ? "●" : "○";
           const color = s.attached ? "green" : "gray";
+          // Find branch for this session by reverse-mapping session name
+          const branch = Object.keys(prMap).find(
+            (b) => branchToSessionName(b) === s.name
+          );
+          const pr = branch ? prMap[branch] : undefined;
           return (
-            <Text key={s.name}>
-              <Text color={selected ? "cyan" : undefined}>
-                {selected ? "› " : "  "}
+            <Box key={s.name} flexDirection="column">
+              <Text>
+                <Text color={selected ? "cyan" : undefined}>
+                  {selected ? "› " : "  "}
+                </Text>
+                <Text color={color}>{icon} </Text>
+                <Text bold={selected}>{s.name}</Text>
               </Text>
-              <Text color={color}>{icon} </Text>
-              <Text bold={selected}>{s.name}</Text>
-            </Text>
+              {adoConfigured ? <PrBadge pr={pr} /> : null}
+            </Box>
           );
         })
       )}
       <Box marginTop={1}>
-        <Text dimColor>n new · d kill · j/k nav · Tab focus · q quit</Text>
+        <Text dimColor>
+          n new · d kill · j/k · Tab · s cfg · q quit
+        </Text>
       </Box>
     </Box>
   );
@@ -151,6 +178,167 @@ function BranchPicker({
           )}
         </Box>
       )}
+    </Box>
+  );
+}
+
+// --- PR Data Hook ---
+
+function usePrData(config: Config, refreshInterval = 60000) {
+  const [prMap, setPrMap] = useState<BranchPrMap>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+
+  const refresh = useCallback(() => {
+    if (!isAdoConfigured(config)) return;
+    const adoConfig: AdoConfig = {
+      org: config.org!,
+      project: config.project!,
+      repo: config.repo!,
+      pat: config.pat!,
+    };
+    setLoading(true);
+    fetchPullRequestsWithComments(adoConfig)
+      .then((map) => {
+        if (mountedRef.current) {
+          setPrMap(map);
+          setError(null);
+        }
+      })
+      .catch((err: Error) => {
+        if (mountedRef.current) {
+          setError(err.message);
+        }
+      })
+      .finally(() => {
+        if (mountedRef.current) setLoading(false);
+      });
+  }, [config]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    if (!isAdoConfigured(config)) return;
+    refresh();
+    const interval = setInterval(refresh, config.prPollInterval ?? refreshInterval);
+    return () => {
+      mountedRef.current = false;
+      clearInterval(interval);
+    };
+  }, [config, refresh, refreshInterval]);
+
+  return { prMap, loading, error, refresh };
+}
+
+// --- PR Badge Component ---
+
+function PrBadge({ pr }: { pr: PullRequestInfo | null | undefined }) {
+  if (pr === null || pr === undefined) {
+    return <Text dimColor>{"    (no PR)"}</Text>;
+  }
+
+  const approvedCount = pr.reviewers.filter((r) => r.vote >= 5).length;
+  const totalReviewers = pr.reviewers.length;
+  const hasRejected = pr.reviewers.some((r) => r.vote === -10);
+  const hasWaiting = pr.reviewers.some((r) => r.vote === -5);
+
+  let reviewColor: string;
+  if (hasRejected) {
+    reviewColor = "red";
+  } else if (hasWaiting) {
+    reviewColor = "yellow";
+  } else if (totalReviewers > 0 && approvedCount === totalReviewers) {
+    reviewColor = "green";
+  } else {
+    reviewColor = "gray";
+  }
+
+  const reviewText =
+    totalReviewers > 0 ? `${approvedCount}/${totalReviewers} approved` : "";
+
+  return (
+    <Text>
+      <Text dimColor>{"    "}</Text>
+      {pr.isDraft ? (
+        <Text dimColor>DRAFT </Text>
+      ) : null}
+      <Text color="blue">PR#{pr.pullRequestId}</Text>
+      {reviewText ? (
+        <Text color={reviewColor}>{`  ${reviewText}`}</Text>
+      ) : null}
+      {pr.activeCommentCount > 0 ? (
+        <Text color="yellow">{`  ${pr.activeCommentCount} comment${pr.activeCommentCount !== 1 ? "s" : ""}`}</Text>
+      ) : null}
+    </Text>
+  );
+}
+
+// --- Settings Panel ---
+
+interface SettingsField {
+  label: string;
+  key: keyof Config;
+  masked?: boolean;
+}
+
+const SETTINGS_FIELDS: SettingsField[] = [
+  { label: "Organization", key: "org" },
+  { label: "Project", key: "project" },
+  { label: "Repository", key: "repo" },
+  { label: "PAT", key: "pat", masked: true },
+];
+
+function SettingsPanel({
+  config,
+  fieldIndex,
+  editingField,
+  editBuffer,
+}: {
+  config: Config;
+  fieldIndex: number;
+  editingField: string | null;
+  editBuffer: string;
+}) {
+  return (
+    <Box
+      flexDirection="column"
+      flexGrow={1}
+      borderStyle="round"
+      borderColor="magenta"
+      paddingX={1}
+    >
+      <Text bold color="magenta">
+        Azure DevOps Settings
+      </Text>
+      <Text dimColor>{"─".repeat(40)}</Text>
+      {SETTINGS_FIELDS.map((field, i) => {
+        const selected = i === fieldIndex;
+        const isEditing = editingField === field.key;
+        const rawValue = String(config[field.key] ?? "");
+        const displayValue = field.masked && rawValue.length > 0
+          ? "*".repeat(Math.min(rawValue.length, 20))
+          : rawValue || "(not set)";
+
+        return (
+          <Text key={field.key}>
+            <Text color={selected ? "cyan" : undefined}>
+              {selected ? "› " : "  "}
+            </Text>
+            <Text bold={selected}>{field.label}: </Text>
+            {isEditing ? (
+              <Text color="cyan">
+                {editBuffer}
+                <Text dimColor>_</Text>
+              </Text>
+            ) : (
+              <Text dimColor={!rawValue}>{displayValue}</Text>
+            )}
+          </Text>
+        );
+      })}
+      <Box marginTop={1}>
+        <Text dimColor>j/k nav · Enter edit · a auto-detect · Esc back</Text>
+      </Box>
     </Box>
   );
 }
@@ -290,7 +478,9 @@ function App() {
   const { stdout } = useStdout();
   const termRows = stdout?.rows ?? 24;
   const termCols = stdout?.columns ?? 80;
-  const sidebarWidth = 24; // Ink width includes border
+  const [config, setConfig] = useState<Config>(() => readConfig());
+  const adoConfigured = isAdoConfigured(config);
+  const sidebarWidth = adoConfigured ? 48 : 24;
   const paneCols = Math.max(20, termCols - sidebarWidth - 4);
   const paneRows = Math.max(5, termRows - 5); // 2 border + 1 heading + 1 separator + 1 status bar
   const [focus, setFocus] = useState<Focus>("sidebar");
@@ -306,6 +496,11 @@ function App() {
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<{ branch: string; sessionName: string; reason: string } | null>(null);
   const [confirmInput, setConfirmInput] = useState("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsFieldIndex, setSettingsFieldIndex] = useState(0);
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editBuffer, setEditBuffer] = useState("");
+  const { prMap, error: prError, refresh: refreshPr } = usePrData(config);
 
   const selectedSession = sessions[selectedIndex];
   const selectedName = selectedSession?.name ?? null;
@@ -442,6 +637,81 @@ function App() {
       return;
     }
 
+    // Settings mode
+    if (settingsOpen) {
+      if (editingField) {
+        if (key.escape) {
+          setEditingField(null);
+          setEditBuffer("");
+          return;
+        }
+        if (key.return) {
+          const field = SETTINGS_FIELDS[settingsFieldIndex]!;
+          const newConfig = { ...config, [field.key]: editBuffer || undefined };
+          setConfig(newConfig);
+          writeConfig(newConfig);
+          setEditingField(null);
+          setEditBuffer("");
+          return;
+        }
+        if (key.backspace || key.delete) {
+          setEditBuffer((v) => v.slice(0, -1));
+          return;
+        }
+        if (input && !key.ctrl && !key.meta) {
+          setEditBuffer((v) => v + input);
+        }
+        return;
+      }
+
+      if (key.escape) {
+        setSettingsOpen(false);
+        return;
+      }
+      if (input === "j" || key.downArrow) {
+        setSettingsFieldIndex((i) =>
+          Math.min(i + 1, SETTINGS_FIELDS.length - 1)
+        );
+        return;
+      }
+      if (input === "k" || key.upArrow) {
+        setSettingsFieldIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (key.return) {
+        const field = SETTINGS_FIELDS[settingsFieldIndex]!;
+        setEditingField(field.key);
+        setEditBuffer(String(config[field.key] ?? ""));
+        return;
+      }
+      if (input === "a") {
+        try {
+          const remoteUrl = execSync("git remote get-url origin", {
+            encoding: "utf8",
+            stdio: "pipe",
+          }).trim();
+          const parsed = parseAdoRemoteUrl(remoteUrl);
+          if (parsed) {
+            const newConfig = {
+              ...config,
+              org: parsed.org,
+              project: parsed.project,
+              repo: parsed.repo,
+            };
+            setConfig(newConfig);
+            writeConfig(newConfig);
+            flashStatus("Auto-detected org/project/repo from git remote");
+          } else {
+            flashStatus("Could not parse Azure DevOps URL from git remote");
+          }
+        } catch {
+          flashStatus("Failed to read git remote");
+        }
+        return;
+      }
+      return;
+    }
+
     // Tab switches focus
     if (key.tab) {
       setFocus((f) => (f === "sidebar" ? "terminal" : "sidebar"));
@@ -497,6 +767,16 @@ function App() {
         }
         return;
       }
+      if (input === "s") {
+        setSettingsOpen(true);
+        setSettingsFieldIndex(0);
+        return;
+      }
+      if (input === "r") {
+        refreshPr();
+        flashStatus("Refreshing PR data...");
+        return;
+      }
       if (input === "j" || key.downArrow) {
         setSelectedIndex((i) => Math.min(i + 1, sessions.length - 1));
       }
@@ -515,9 +795,19 @@ function App() {
         <Sidebar
           sessions={sessions}
           selectedIndex={selectedIndex}
-          focused={focus === "sidebar" && !creating}
+          focused={focus === "sidebar" && !creating && !settingsOpen}
+          prMap={prMap}
+          adoConfigured={adoConfigured}
+          sidebarWidth={sidebarWidth}
         />
-        {creating ? (
+        {settingsOpen ? (
+          <SettingsPanel
+            config={config}
+            fieldIndex={settingsFieldIndex}
+            editingField={editingField}
+            editBuffer={editBuffer}
+          />
+        ) : creating ? (
           <BranchPicker
             filter={branchFilter}
             branches={branches}
@@ -547,12 +837,15 @@ function App() {
             <Text dimColor> · Enter select · Esc cancel</Text>
           </Text>
         ) : statusMessage ? (
-          <Text color="red">{statusMessage}</Text>
+          <Text color="yellow">{statusMessage}</Text>
+        ) : prError ? (
+          <Text color="red">PR error: {prError}</Text>
         ) : (
           <Text dimColor>
             workflow-manager · {sessions.length} sessions ·{" "}
             focus: <Text color="cyan">{focus}</Text> · tmux:{" "}
             {hasTmux ? "✓" : "✕"}
+            {!adoConfigured ? " · (s to configure ADO)" : ""}
           </Text>
         )}
       </Box>

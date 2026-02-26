@@ -10,6 +10,12 @@
   "exclude": [],
   "references": [
     {
+      "path": "../../libs/shared-types/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/azure-devops/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/tmux-control/tsconfig.lib.json"
     },
     {
