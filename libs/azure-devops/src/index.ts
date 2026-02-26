@@ -1,1 +1,1 @@
-export * from './lib/azure-devops.js';
+export * from './lib/api-client.js';
