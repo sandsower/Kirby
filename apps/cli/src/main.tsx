@@ -318,6 +318,9 @@ function App() {
       setSessions(listSessions());
     }
     setBranches(listBranches());
+    return () => {
+      if (statusTimer.current) clearTimeout(statusTimer.current);
+    };
   }, []);
 
   // Refresh function used after create/kill
@@ -344,9 +347,9 @@ function App() {
       // Branch delete may fail if not fully merged — that's ok, worktree is gone
     }
     const updated = refreshSessions();
-    if (selectedIndex >= updated.length) {
-      setSelectedIndex(Math.max(0, updated.length - 1));
-    }
+    setSelectedIndex((prev) =>
+      prev >= updated.length ? Math.max(0, updated.length - 1) : prev
+    );
   };
 
   // Control mode connection for selected session
