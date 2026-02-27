@@ -98,6 +98,10 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
         stdio: ["pipe", "pipe", "pipe"],
       });
 
+      this.proc.stdin!.on("error", () => {
+        // Absorb EPIPE / write errors on dead stdin — the "exit" handler manages cleanup
+      });
+
       this.proc.on("error", (err) => {
         this._state = "closed";
         reject(err);

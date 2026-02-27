@@ -58,3 +58,19 @@ export interface Config {
 export const DEFAULT_CONFIG: Config = {
   pollInterval: 500,
 };
+
+export interface GlobalConfig {
+  pat?: string;
+  pollInterval: number;
+  prPollInterval?: number;
+}
+
+export interface ProjectConfig {
+  org?: string;
+  project?: string;
+  repo?: string;
+  email?: string;
+}
+
+export const DEFAULT_GLOBAL_CONFIG: GlobalConfig = { pollInterval: 500 };
+export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {};

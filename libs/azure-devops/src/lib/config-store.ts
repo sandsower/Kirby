@@ -1,35 +1,67 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import type { Config } from "@workflow-manager/shared-types";
-import { DEFAULT_CONFIG } from "@workflow-manager/shared-types";
+import type { Config, GlobalConfig, ProjectConfig } from "@workflow-manager/shared-types";
+import { DEFAULT_CONFIG, DEFAULT_GLOBAL_CONFIG, DEFAULT_PROJECT_CONFIG } from "@workflow-manager/shared-types";
 
-const DEFAULT_CONFIG_PATH = join(
-  homedir(),
-  ".workflow-manager",
-  "config.json"
-);
+const WM_DIR = join(homedir(), ".workflow-manager");
+const GLOBAL_CONFIG_PATH = join(WM_DIR, "config.json");
 
-/** Read config from disk, merging with defaults */
-export function readConfig(path = DEFAULT_CONFIG_PATH): Config {
+/** Hash CWD to a 16-char hex key for per-project config */
+export function projectKey(cwd: string): string {
+  return createHash("sha256").update(cwd).digest("hex").slice(0, 16);
+}
+
+/** Path to per-project config file */
+function projectConfigPath(cwd: string): string {
+  return join(WM_DIR, "projects", projectKey(cwd), "config.json");
+}
+
+/** Read JSON file, returning fallback on any error */
+function readJsonFile<T>(path: string, fallback: T): T {
   try {
     const data = readFileSync(path, "utf8");
-    return { ...DEFAULT_CONFIG, ...JSON.parse(data) };
+    return { ...fallback, ...JSON.parse(data) };
   } catch {
-    return { ...DEFAULT_CONFIG };
+    return { ...fallback };
   }
 }
 
-/** Write config to disk */
-export function writeConfig(
-  config: Config,
-  path = DEFAULT_CONFIG_PATH
-): void {
+/** Write JSON file, creating parent dirs as needed */
+function writeJsonFile<T>(path: string, data: T): void {
   const dir = dirname(path);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(path, JSON.stringify(config, null, 2), "utf8");
+  writeFileSync(path, JSON.stringify(data, null, 2), "utf8");
+}
+
+/** Read global config (~/.workflow-manager/config.json) */
+export function readGlobalConfig(): GlobalConfig {
+  return readJsonFile(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG);
+}
+
+/** Write global config (~/.workflow-manager/config.json) */
+export function writeGlobalConfig(config: GlobalConfig): void {
+  writeJsonFile(GLOBAL_CONFIG_PATH, config);
+}
+
+/** Read per-project config (~/.workflow-manager/projects/<hash>/config.json) */
+export function readProjectConfig(cwd = process.cwd()): ProjectConfig {
+  return readJsonFile(projectConfigPath(cwd), DEFAULT_PROJECT_CONFIG);
+}
+
+/** Write per-project config (~/.workflow-manager/projects/<hash>/config.json) */
+export function writeProjectConfig(config: ProjectConfig, cwd = process.cwd()): void {
+  writeJsonFile(projectConfigPath(cwd), config);
+}
+
+/** Read merged config: defaults → global → project */
+export function readConfig(cwd = process.cwd()): Config {
+  const global = readGlobalConfig();
+  const project = readProjectConfig(cwd);
+  return { ...DEFAULT_CONFIG, ...global, ...project };
 }
 
 /** Check if Azure DevOps is fully configured */

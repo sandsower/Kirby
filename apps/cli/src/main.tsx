@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { execSync } from "node:child_process";
+import { resolve } from "node:path";
 import { render, Text, Box, useInput, useApp, useStdout, type Key } from "ink";
 import {
   isAvailable,
   listSessions,
+  hasSession,
   killSession,
   createSession,
   createWorktree,
@@ -18,7 +20,10 @@ import { ControlConnection } from "@workflow-manager/tmux-control";
 import {
   fetchPullRequestsWithComments,
   readConfig,
-  writeConfig,
+  readGlobalConfig,
+  writeGlobalConfig,
+  readProjectConfig,
+  writeProjectConfig,
   isAdoConfigured,
   parseAdoRemoteUrl,
 } from "@workflow-manager/azure-devops";
@@ -46,14 +51,12 @@ function Sidebar({
   sidebarWidth: number;
   orphanPrs: PullRequestInfo[];
 }) {
-  // inner width = sidebarWidth - 2 (border) - 2 (paddingX)
-  const innerWidth = Math.max(10, sidebarWidth - 4);
+  // inner width = sidebarWidth - 2 (paddingX)
+  const innerWidth = Math.max(10, sidebarWidth - 2);
   return (
     <Box
       flexDirection="column"
       width={sidebarWidth}
-      borderStyle="round"
-      borderColor={focused ? "blue" : "gray"}
       paddingX={1}
     >
       <Text bold color={focused ? "blue" : "gray"}>
@@ -111,10 +114,13 @@ function Sidebar({
           })}
         </>
       )}
-      <Box marginTop={1}>
-        <Text dimColor>
-          n new · d kill · Enter open · j/k · Tab · s cfg · q quit
-        </Text>
+      <Box marginTop={1} flexDirection="column">
+        <Text dimColor><Text color="cyan">n</Text> new session</Text>
+        <Text dimColor><Text color="cyan">d</Text> delete branch</Text>
+        <Text dimColor><Text color="cyan">Shift+K</Text> kill session</Text>
+        <Text dimColor><Text color="cyan">Tab</Text> switch focus</Text>
+        <Text dimColor><Text color="cyan">s</Text> settings</Text>
+        <Text dimColor><Text color="cyan">q</Text> quit</Text>
       </Box>
     </Box>
   );
@@ -131,8 +137,6 @@ function TerminalView({
     <Box
       flexDirection="column"
       flexGrow={1}
-      borderStyle="round"
-      borderColor={focused ? "green" : "gray"}
       paddingX={1}
       overflow="hidden"
     >
@@ -165,8 +169,6 @@ function BranchPicker({
     <Box
       flexDirection="column"
       flexGrow={1}
-      borderStyle="round"
-      borderColor="yellow"
       paddingX={1}
       overflow="hidden"
     >
@@ -332,8 +334,6 @@ function SettingsPanel({
     <Box
       flexDirection="column"
       flexGrow={1}
-      borderStyle="round"
-      borderColor="magenta"
       paddingX={1}
     >
       <Text bold color="magenta">
@@ -378,7 +378,8 @@ function useControlMode(
   sessionName: string | null,
   paneCols: number,
   paneRows: number,
-  setPaneContent: (content: string) => void
+  setPaneContent: (content: string) => void,
+  reconnectKey: number
 ) {
   const connRef = useRef<ControlConnection | null>(null);
   const renderTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -420,6 +421,13 @@ function useControlMode(
   useEffect(() => {
     if (!sessionName) return;
 
+    // Don't connect if the tmux session doesn't exist yet —
+    // it will be auto-created when the user tabs into the terminal pane
+    if (!hasSession(sessionName)) {
+      setPaneContent("(press Tab to start session)");
+      return;
+    }
+
     const conn = new ControlConnection(sessionName);
     connRef.current = conn;
 
@@ -455,9 +463,9 @@ function useControlMode(
       conn.disconnect();
       connRef.current = null;
     };
-    // Only reconnect when the session changes — resize is handled separately
+    // Only reconnect when the session changes (or reconnectKey bumps after auto-create)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionName]);
+  }, [sessionName, reconnectKey]);
 
   // Resize the pane without reconnecting
   useEffect(() => {
@@ -510,8 +518,8 @@ function App() {
   const [config, setConfig] = useState<Config>(() => readConfig());
   const adoConfigured = isAdoConfigured(config);
   const sidebarWidth = adoConfigured ? 48 : 24;
-  const paneCols = Math.max(20, termCols - sidebarWidth - 4);
-  const paneRows = Math.max(5, termRows - 5); // 2 border + 1 heading + 1 separator + 1 status bar
+  const paneCols = Math.max(20, termCols - sidebarWidth - 2);
+  const paneRows = Math.max(5, termRows - 3); // 1 heading + 1 separator + 1 status bar
   const [focus, setFocus] = useState<Focus>("sidebar");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [sessions, setSessions] = useState<TmuxSession[]>([]);
@@ -529,6 +537,7 @@ function App() {
   const [settingsFieldIndex, setSettingsFieldIndex] = useState(0);
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState("");
+  const [reconnectKey, setReconnectKey] = useState(0);
   const { prMap, error: prError, refresh: refreshPr } = usePrData(config);
 
   // Orphan PRs: user's PRs that don't have a matching session (worktree-backed or tmux)
@@ -565,21 +574,48 @@ function App() {
     }
     setBranches(listBranches());
 
-    // Auto-detect email from git config if not already set
-    if (!config.email) {
+    // Auto-detect per-project fields on first launch
+    const projectCfg = readProjectConfig();
+    let projectUpdated = false;
+
+    // Auto-detect org/project/repo from git remote
+    if (!projectCfg.org || !projectCfg.project || !projectCfg.repo) {
+      try {
+        const remoteUrl = execSync("git remote get-url origin", {
+          encoding: "utf8",
+          stdio: "pipe",
+        }).trim();
+        const parsed = parseAdoRemoteUrl(remoteUrl);
+        if (parsed) {
+          projectCfg.org = projectCfg.org || parsed.org;
+          projectCfg.project = projectCfg.project || parsed.project;
+          projectCfg.repo = projectCfg.repo || parsed.repo;
+          projectUpdated = true;
+        }
+      } catch {
+        // git remote may fail — not critical
+      }
+    }
+
+    // Auto-detect email from git config
+    if (!projectCfg.email) {
       try {
         const email = execSync("git config user.email", {
           encoding: "utf8",
           stdio: "pipe",
         }).trim();
         if (email) {
-          const newConfig = { ...config, email };
-          setConfig(newConfig);
-          writeConfig(newConfig);
+          projectCfg.email = email;
+          projectUpdated = true;
         }
       } catch {
         // git config may fail — not critical
       }
+    }
+
+    if (projectUpdated) {
+      writeProjectConfig(projectCfg);
+      setConfig(readConfig());
     }
 
     return () => {
@@ -634,7 +670,8 @@ function App() {
     hasTmux ? selectedName : null,
     paneCols,
     paneRows,
-    setPaneContent
+    setPaneContent,
+    reconnectKey
   );
 
   useInput((input, key) => {
@@ -729,9 +766,20 @@ function App() {
         }
         if (key.return) {
           const field = SETTINGS_FIELDS[settingsFieldIndex]!;
-          const newConfig = { ...config, [field.key]: editBuffer || undefined };
+          const value = editBuffer || undefined;
+          const newConfig = { ...config, [field.key]: value };
           setConfig(newConfig);
-          writeConfig(newConfig);
+
+          // Route save to the correct config tier
+          const globalKeys = new Set(["pat", "pollInterval", "prPollInterval"]);
+          if (globalKeys.has(field.key)) {
+            const g = readGlobalConfig();
+            writeGlobalConfig({ ...g, [field.key]: value });
+          } else {
+            const p = readProjectConfig();
+            writeProjectConfig({ ...p, [field.key]: value });
+          }
+
           setEditingField(null);
           setEditBuffer("");
           return;
@@ -774,14 +822,9 @@ function App() {
           }).trim();
           const parsed = parseAdoRemoteUrl(remoteUrl);
           if (parsed) {
-            const newConfig = {
-              ...config,
-              org: parsed.org,
-              project: parsed.project,
-              repo: parsed.repo,
-            };
-            setConfig(newConfig);
-            writeConfig(newConfig);
+            const p = readProjectConfig();
+            writeProjectConfig({ ...p, ...parsed });
+            setConfig((prev) => ({ ...prev, ...parsed }));
             flashStatus("Auto-detected org/project/repo from git remote");
           } else {
             flashStatus("Could not parse Azure DevOps URL from git remote");
@@ -794,8 +837,13 @@ function App() {
       return;
     }
 
-    // Tab switches focus
+    // Tab switches focus — auto-create tmux session if needed
     if (key.tab) {
+      if (focus === "sidebar" && selectedName && !hasSession(selectedName)) {
+        const worktreePath = resolve(process.cwd(), ".tui/worktrees/" + selectedName);
+        createSession(selectedName, paneCols, paneRows, "claude", worktreePath);
+        setReconnectKey((k) => k + 1);
+      }
       setFocus((f) => (f === "sidebar" ? "terminal" : "sidebar"));
       return;
     }
@@ -847,6 +895,11 @@ function App() {
             setSelectedIndex(Math.max(0, updated.length - 1));
           }
         }
+        return;
+      }
+      if (input === "K" && selectedSession) {
+        killSession(selectedSession.name);
+        refreshSessions();
         return;
       }
       if (input === "s") {
