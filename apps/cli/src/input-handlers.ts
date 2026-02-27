@@ -389,8 +389,22 @@ export function handleGlobalInput(
   key: Key,
   ctx: AppContext
 ): void {
-  // Tab switches focus — auto-create tmux session if needed
-  if (key.tab) {
+  // Number keys switch tabs (only when sidebar focused)
+  if (ctx.focus === 'sidebar') {
+    if (input === '1' && ctx.activeTab !== 'sessions') {
+      ctx.setActiveTab('sessions');
+      ctx.setFocus('sidebar');
+      return;
+    }
+    if (input === '2' && ctx.activeTab !== 'reviews') {
+      ctx.setActiveTab('reviews');
+      ctx.setFocus('sidebar');
+      return;
+    }
+  }
+
+  // Tab switches focus — only in sessions tab
+  if (key.tab && ctx.activeTab === 'sessions') {
     if (
       ctx.focus === 'sidebar' &&
       ctx.selectedName &&
@@ -423,7 +437,9 @@ export function handleGlobalInput(
   }
 
   if (ctx.focus === 'sidebar') {
-    handleSidebarInput(input, key, ctx);
+    if (ctx.activeTab === 'sessions') {
+      handleSidebarInput(input, key, ctx);
+    }
   } else {
     ctx.sendInput(input, key);
   }
