@@ -16,12 +16,18 @@ import {
   isAdoConfigured,
   autoDetectProjectConfig,
 } from '@kirby/azure-devops';
-import type { PullRequestInfo, Config, ActiveTab } from '@kirby/shared-types';
+import type {
+  PullRequestInfo,
+  Config,
+  ActiveTab,
+  CategorizedReviews,
+} from '@kirby/shared-types';
 import { TabBar } from './components/TabBar.js';
 import { Sidebar } from './components/Sidebar.js';
 import { TerminalView } from './components/TerminalView.js';
 import { BranchPicker } from './components/BranchPicker.js';
 import { SettingsPanel } from './components/SettingsPanel.js';
+import { ReviewsSidebar } from './components/ReviewsSidebar.js';
 import { usePrData } from './hooks/usePrData.js';
 import { useControlMode } from './hooks/useControlMode.js';
 import {
@@ -130,6 +136,7 @@ function App() {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editBuffer, setEditBuffer] = useState('');
   const [reconnectKey, setReconnectKey] = useState(0);
+  const [reviewSelectedIndex, setReviewSelectedIndex] = useState(0);
   const { prMap, error: prError, refresh: refreshPr } = usePrData(config);
 
   // Orphan PRs: user's PRs that don't have a matching worktree session
@@ -146,6 +153,44 @@ function App() {
       )
       .sort((a, b) => b.pullRequestId - a.pullRequestId);
   }, [prMap, sessions, config.email]);
+
+  // Categorize PRs where the user is a reviewer
+  const categorizedReviews = useMemo((): CategorizedReviews => {
+    if (!config.email)
+      return { needsReview: [], changesRequested: [], approvedByYou: [] };
+    const email = config.email.toLowerCase();
+    const needsReview: PullRequestInfo[] = [];
+    const changesRequested: PullRequestInfo[] = [];
+    const approvedByYou: PullRequestInfo[] = [];
+
+    for (const pr of Object.values(prMap)) {
+      if (!pr) continue;
+      const reviewer = pr.reviewers.find(
+        (r) => r.uniqueName.toLowerCase() === email
+      );
+      if (!reviewer) continue;
+      if (reviewer.vote === 5 || reviewer.vote === 10) {
+        approvedByYou.push(pr);
+      } else if (reviewer.vote === -5 || reviewer.vote === -10) {
+        changesRequested.push(pr);
+      } else {
+        needsReview.push(pr);
+      }
+    }
+    return { needsReview, changesRequested, approvedByYou };
+  }, [prMap, config.email]);
+
+  const reviewTotalItems =
+    categorizedReviews.needsReview.length +
+    categorizedReviews.changesRequested.length +
+    categorizedReviews.approvedByYou.length;
+
+  // Clamp reviewSelectedIndex when review items shrink
+  useEffect(() => {
+    if (reviewTotalItems > 0 && reviewSelectedIndex >= reviewTotalItems) {
+      setReviewSelectedIndex(reviewTotalItems - 1);
+    }
+  }, [reviewTotalItems, reviewSelectedIndex]);
 
   // Sort sessions by associated PR number (newest first), sessions without a PR go last
   const sortedSessions = useMemo(() => {
@@ -267,6 +312,8 @@ function App() {
     sessions: sortedSessions,
     orphanPrs,
     totalItems,
+    reviewSelectedIndex,
+    reviewTotalItems,
     setCreating,
     setBranchFilter,
     setBranchIndex,
@@ -278,6 +325,7 @@ function App() {
     setEditingField,
     setEditBuffer,
     setActiveTab,
+    setReviewSelectedIndex,
     setConfig,
     setFocus,
     setReconnectKey,
@@ -299,7 +347,10 @@ function App() {
 
   return (
     <Box flexDirection="column" height={termRows}>
-      <TabBar activeTab={activeTab} reviewCount={0} />
+      <TabBar
+        activeTab={activeTab}
+        reviewCount={categorizedReviews.needsReview.length}
+      />
       <Box flexGrow={1}>
         {activeTab === 'sessions' && (
           <>
@@ -339,6 +390,13 @@ function App() {
               />
             )}
           </>
+        )}
+        {activeTab === 'reviews' && (
+          <ReviewsSidebar
+            categorized={categorizedReviews}
+            selectedIndex={reviewSelectedIndex}
+            sidebarWidth={sidebarWidth}
+          />
         )}
       </Box>
       <Box paddingX={1} justifyContent="space-between">

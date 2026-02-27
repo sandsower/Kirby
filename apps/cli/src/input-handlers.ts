@@ -68,6 +68,8 @@ export interface AppContext {
   sessions: TmuxSession[];
   orphanPrs: PullRequestInfo[];
   totalItems: number;
+  reviewSelectedIndex: number;
+  reviewTotalItems: number;
 
   // Actions
   setCreating: (v: boolean) => void;
@@ -83,6 +85,7 @@ export interface AppContext {
   setEditingField: (v: string | null) => void;
   setEditBuffer: (v: string | ((prev: string) => string)) => void;
   setActiveTab: (v: ActiveTab) => void;
+  setReviewSelectedIndex: (v: number | ((prev: number) => number)) => void;
   setConfig: (v: Config | ((prev: Config) => Config)) => void;
   setFocus: (
     v:
@@ -384,6 +387,37 @@ export function handleSidebarInput(
   }
 }
 
+export function handleReviewsSidebarInput(
+  input: string,
+  key: Key,
+  ctx: AppContext
+): void {
+  if (input === 'q') {
+    ctx.exit();
+    return;
+  }
+  if (input === 'r') {
+    ctx.refreshPr();
+    ctx.flashStatus('Refreshing PR data...');
+    return;
+  }
+  if (input === 's') {
+    ctx.setSettingsOpen(true);
+    ctx.setSettingsFieldIndex(0);
+    return;
+  }
+  if (input === 'j' || key.downArrow) {
+    ctx.setReviewSelectedIndex((i) =>
+      Math.min(i + 1, ctx.reviewTotalItems - 1)
+    );
+    return;
+  }
+  if (input === 'k' || key.upArrow) {
+    ctx.setReviewSelectedIndex((i) => Math.max(i - 1, 0));
+    return;
+  }
+}
+
 export function handleGlobalInput(
   input: string,
   key: Key,
@@ -439,6 +473,8 @@ export function handleGlobalInput(
   if (ctx.focus === 'sidebar') {
     if (ctx.activeTab === 'sessions') {
       handleSidebarInput(input, key, ctx);
+    } else if (ctx.activeTab === 'reviews') {
+      handleReviewsSidebarInput(input, key, ctx);
     }
   } else {
     ctx.sendInput(input, key);
