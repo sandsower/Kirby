@@ -30,8 +30,15 @@ const testConfig = {
 
 describe('parseReviewer', () => {
   it('parses a valid reviewer', () => {
-    expect(parseReviewer({ displayName: 'Alice', vote: 10 })).toEqual({
+    expect(
+      parseReviewer({
+        displayName: 'Alice',
+        uniqueName: 'alice@example.com',
+        vote: 10,
+      })
+    ).toEqual({
       displayName: 'Alice',
+      uniqueName: 'alice@example.com',
       vote: 10,
     });
   });
@@ -39,6 +46,7 @@ describe('parseReviewer', () => {
   it('defaults missing fields', () => {
     expect(parseReviewer({})).toEqual({
       displayName: 'Unknown',
+      uniqueName: '',
       vote: 0,
     });
   });
@@ -46,6 +54,7 @@ describe('parseReviewer', () => {
   it('normalizes invalid vote to 0', () => {
     expect(parseReviewer({ displayName: 'Bob', vote: 7 })).toEqual({
       displayName: 'Bob',
+      uniqueName: '',
       vote: 0,
     });
   });
@@ -61,44 +70,66 @@ describe('parsePullRequest', () => {
   it('parses a full PR', () => {
     const result = parsePullRequest({
       pullRequestId: 42,
+      title: 'Add feature X',
       sourceRefName: 'refs/heads/feature/my-branch',
+      targetRefName: 'refs/heads/main',
       isDraft: true,
-      reviewers: [{ displayName: 'Alice', vote: 10 }],
+      reviewers: [
+        { displayName: 'Alice', uniqueName: 'alice@example.com', vote: 10 },
+      ],
+      createdBy: {
+        uniqueName: 'bob@example.com',
+        displayName: 'Bob Builder',
+      },
     });
     expect(result).toEqual({
       pullRequestId: 42,
+      title: 'Add feature X',
       sourceBranch: 'feature/my-branch',
+      targetBranch: 'main',
       isDraft: true,
-      reviewers: [{ displayName: 'Alice', vote: 10 }],
-      createdByUniqueName: undefined,
+      reviewers: [
+        { displayName: 'Alice', uniqueName: 'alice@example.com', vote: 10 },
+      ],
+      createdByUniqueName: 'bob@example.com',
+      createdByDisplayName: 'Bob Builder',
     });
   });
 
-  it('strips refs/heads/ prefix', () => {
+  it('strips refs/heads/ prefix from both branches', () => {
     const result = parsePullRequest({
       sourceRefName: 'refs/heads/main',
+      targetRefName: 'refs/heads/develop',
     });
     expect(result.sourceBranch).toBe('main');
+    expect(result.targetBranch).toBe('develop');
   });
 
   it('defaults missing fields', () => {
     const result = parsePullRequest({});
     expect(result).toEqual({
       pullRequestId: 0,
+      title: '',
       sourceBranch: '',
+      targetBranch: '',
       isDraft: false,
       reviewers: [],
       createdByUniqueName: undefined,
+      createdByDisplayName: undefined,
     });
   });
 
-  it('extracts createdBy uniqueName', () => {
+  it('extracts createdBy uniqueName and displayName', () => {
     const result = parsePullRequest({
       pullRequestId: 99,
       sourceRefName: 'refs/heads/feature/test',
-      createdBy: { uniqueName: 'user@example.com' },
+      createdBy: {
+        uniqueName: 'user@example.com',
+        displayName: 'Test User',
+      },
     });
     expect(result.createdByUniqueName).toBe('user@example.com');
+    expect(result.createdByDisplayName).toBe('Test User');
   });
 });
 
@@ -254,17 +285,25 @@ describe('fetchPullRequestsWithComments', () => {
 
     expect(result['feat-a']).toEqual({
       pullRequestId: 42,
+      title: '',
       sourceBranch: 'feat-a',
+      targetBranch: '',
       isDraft: false,
-      reviewers: [{ displayName: 'Alice', vote: 10 }],
+      reviewers: [{ displayName: 'Alice', uniqueName: '', vote: 10 }],
       activeCommentCount: 2,
+      createdByUniqueName: undefined,
+      createdByDisplayName: undefined,
     });
     expect(result['feat-b']).toEqual({
       pullRequestId: 43,
+      title: '',
       sourceBranch: 'feat-b',
+      targetBranch: '',
       isDraft: true,
       reviewers: [],
       activeCommentCount: 0,
+      createdByUniqueName: undefined,
+      createdByDisplayName: undefined,
     });
   });
 });

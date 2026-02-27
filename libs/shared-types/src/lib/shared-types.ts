@@ -3,16 +3,28 @@ export type ReviewerVote = 10 | 5 | 0 | -5 | -10;
 
 export interface PullRequestReviewer {
   displayName: string;
+  uniqueName: string;
   vote: ReviewerVote;
 }
 
 export interface PullRequestInfo {
   pullRequestId: number;
+  title: string;
   sourceBranch: string;
+  targetBranch: string;
   isDraft: boolean;
   reviewers: PullRequestReviewer[];
   activeCommentCount: number;
   createdByUniqueName?: string;
+  createdByDisplayName?: string;
+}
+
+export type ActiveTab = 'sessions' | 'reviews';
+
+export interface CategorizedReviews {
+  needsReview: PullRequestInfo[];
+  changesRequested: PullRequestInfo[];
+  approvedByYou: PullRequestInfo[];
 }
 
 export type BranchPrMap = Record<string, PullRequestInfo | null>;

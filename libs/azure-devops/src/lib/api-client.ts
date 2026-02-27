@@ -27,12 +27,14 @@ function baseUrl(config: AdoConfig): string {
 
 export function parseReviewer(raw: {
   displayName?: string;
+  uniqueName?: string;
   vote?: number;
 }): PullRequestReviewer {
   const vote = raw.vote ?? 0;
   const validVotes: ReviewerVote[] = [10, 5, 0, -5, -10];
   return {
     displayName: raw.displayName ?? 'Unknown',
+    uniqueName: raw.uniqueName ?? '',
     vote: validVotes.includes(vote as ReviewerVote)
       ? (vote as ReviewerVote)
       : 0,
@@ -41,18 +43,28 @@ export function parseReviewer(raw: {
 
 export function parsePullRequest(raw: {
   pullRequestId?: number;
+  title?: string;
   sourceRefName?: string;
+  targetRefName?: string;
   isDraft?: boolean;
-  reviewers?: Array<{ displayName?: string; vote?: number }>;
-  createdBy?: { uniqueName?: string };
+  reviewers?: Array<{
+    displayName?: string;
+    uniqueName?: string;
+    vote?: number;
+  }>;
+  createdBy?: { uniqueName?: string; displayName?: string };
 }): Omit<PullRequestInfo, 'activeCommentCount'> {
-  const branch = (raw.sourceRefName ?? '').replace(/^refs\/heads\//, '');
+  const sourceBranch = (raw.sourceRefName ?? '').replace(/^refs\/heads\//, '');
+  const targetBranch = (raw.targetRefName ?? '').replace(/^refs\/heads\//, '');
   return {
     pullRequestId: raw.pullRequestId ?? 0,
-    sourceBranch: branch,
+    title: raw.title ?? '',
+    sourceBranch,
+    targetBranch,
     isDraft: raw.isDraft ?? false,
     reviewers: (raw.reviewers ?? []).map(parseReviewer),
     createdByUniqueName: raw.createdBy?.uniqueName,
+    createdByDisplayName: raw.createdBy?.displayName,
   };
 }
 
