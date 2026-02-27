@@ -1,9 +1,11 @@
 {
-  "name": "@workflow-manager/source",
+  "name": "@kirby/source",
   "version": "0.0.0",
   "license": "MIT",
   "type": "module",
-  "scripts": {},
+  "scripts": {
+    "prepare": "husky"
+  },
   "private": true,
   "devDependencies": {
     "@nx/esbuild": "22.5.2",
@@ -16,6 +18,8 @@
     "@types/node": "20.19.9",
     "@vitest/coverage-v8": "^4.0.0",
     "esbuild": "^0.19.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.2.7",
     "nx": "22.5.1",
     "prettier": "^2.6.2",
     "tslib": "^2.3.0",
@@ -27,5 +31,7 @@
     "apps/*",
     "libs/*"
   ],
-  "dependencies": {}
+  "lint-staged": {
+    "*": "npx nx format:write --files"
+  }
 }
