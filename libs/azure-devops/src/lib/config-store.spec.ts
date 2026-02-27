@@ -50,17 +50,16 @@ describe("readGlobalConfig", () => {
       throw new Error("ENOENT");
     });
     const config = readGlobalConfig();
-    expect(config.pollInterval).toBe(500);
     expect(config.pat).toBeUndefined();
   });
 
   it("merges file data with defaults", () => {
     mockReadFileSync.mockReturnValue(
-      JSON.stringify({ pat: "my-pat", pollInterval: 1000 })
+      JSON.stringify({ pat: "my-pat", prPollInterval: 30000 })
     );
     const config = readGlobalConfig();
     expect(config.pat).toBe("my-pat");
-    expect(config.pollInterval).toBe(1000);
+    expect(config.prPollInterval).toBe(30000);
   });
 
   it("reads from the global config path", () => {
@@ -78,21 +77,21 @@ describe("writeGlobalConfig", () => {
 
   it("creates directory if it doesn't exist", () => {
     mockExistsSync.mockReturnValue(false);
-    writeGlobalConfig({ pollInterval: 500, pat: "test" });
+    writeGlobalConfig({ pat: "test" });
     expect(vi.mocked(mkdirSync)).toHaveBeenCalled();
     expect(mockWriteFileSync).toHaveBeenCalled();
   });
 
   it("writes to the global config path", () => {
     mockExistsSync.mockReturnValue(true);
-    writeGlobalConfig({ pollInterval: 1000 });
+    writeGlobalConfig({ pat: "my-pat" });
     expect(mockWriteFileSync).toHaveBeenCalledWith(
       "/home/testuser/.workflow-manager/config.json",
       expect.any(String),
       "utf8"
     );
     const written = mockWriteFileSync.mock.calls[0]![1] as string;
-    expect(JSON.parse(written)).toEqual({ pollInterval: 1000 });
+    expect(JSON.parse(written)).toEqual({ pat: "my-pat" });
   });
 });
 
@@ -148,12 +147,11 @@ describe("readConfig", () => {
     // First call: global config
     // Second call: project config
     mockReadFileSync
-      .mockReturnValueOnce(JSON.stringify({ pat: "my-pat", pollInterval: 1000 }))
+      .mockReturnValueOnce(JSON.stringify({ pat: "my-pat" }))
       .mockReturnValueOnce(JSON.stringify({ org: "myorg", project: "myproj", repo: "myrepo" }));
 
     const config = readConfig("/some/project");
     expect(config.pat).toBe("my-pat");
-    expect(config.pollInterval).toBe(1000);
     expect(config.org).toBe("myorg");
     expect(config.project).toBe("myproj");
     expect(config.repo).toBe("myrepo");
@@ -174,7 +172,6 @@ describe("readConfig", () => {
       throw new Error("ENOENT");
     });
     const config = readConfig("/some/project");
-    expect(config.pollInterval).toBe(500);
     expect(config.pat).toBeUndefined();
     expect(config.org).toBeUndefined();
   });
@@ -184,7 +181,6 @@ describe("isAdoConfigured", () => {
   it("returns true when all fields are set", () => {
     expect(
       isAdoConfigured({
-        pollInterval: 500,
         pat: "token",
         org: "myorg",
         project: "myproj",
@@ -196,7 +192,6 @@ describe("isAdoConfigured", () => {
   it("returns false when pat is missing", () => {
     expect(
       isAdoConfigured({
-        pollInterval: 500,
         org: "myorg",
         project: "myproj",
         repo: "myrepo",
@@ -207,7 +202,6 @@ describe("isAdoConfigured", () => {
   it("returns false when org is missing", () => {
     expect(
       isAdoConfigured({
-        pollInterval: 500,
         pat: "token",
         project: "myproj",
         repo: "myrepo",
@@ -216,7 +210,7 @@ describe("isAdoConfigured", () => {
   });
 
   it("returns false with empty config", () => {
-    expect(isAdoConfigured({ pollInterval: 500 })).toBe(false);
+    expect(isAdoConfigured({})).toBe(false);
   });
 });
 

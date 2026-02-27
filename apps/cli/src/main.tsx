@@ -771,7 +771,7 @@ function App() {
           setConfig(newConfig);
 
           // Route save to the correct config tier
-          const globalKeys = new Set(["pat", "pollInterval", "prPollInterval"]);
+          const globalKeys = new Set(["pat", "prPollInterval"]);
           if (globalKeys.has(field.key)) {
             const g = readGlobalConfig();
             writeGlobalConfig({ ...g, [field.key]: value });
