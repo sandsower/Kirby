@@ -16,7 +16,8 @@ import {
   isAdoConfigured,
   autoDetectProjectConfig,
 } from '@kirby/azure-devops';
-import type { PullRequestInfo, Config } from '@kirby/shared-types';
+import type { PullRequestInfo, Config, ActiveTab } from '@kirby/shared-types';
+import { TabBar } from './components/TabBar.js';
 import { Sidebar } from './components/Sidebar.js';
 import { TerminalView } from './components/TerminalView.js';
 import { BranchPicker } from './components/BranchPicker.js';
@@ -105,7 +106,8 @@ function App() {
   const adoConfigured = isAdoConfigured(config);
   const sidebarWidth = adoConfigured ? 48 : 24;
   const paneCols = Math.max(20, termCols - sidebarWidth - 2);
-  const paneRows = Math.max(5, termRows - 3); // 1 heading + 1 separator + 1 status bar
+  const paneRows = Math.max(5, termRows - 4); // 1 tab bar + 1 heading + 1 separator + 1 status bar
+  const [activeTab, setActiveTab] = useState<ActiveTab>('sessions');
   const [focus, setFocus] = useState<Focus>('sidebar');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [sessions, setSessions] = useState<TmuxSession[]>([]);
@@ -257,6 +259,7 @@ function App() {
     editingField,
     settingsFieldIndex,
     editBuffer,
+    activeTab,
     focus,
     selectedName,
     selectedSession,
@@ -274,6 +277,7 @@ function App() {
     setSettingsFieldIndex,
     setEditingField,
     setEditBuffer,
+    setActiveTab,
     setConfig,
     setFocus,
     setReconnectKey,
@@ -295,41 +299,46 @@ function App() {
 
   return (
     <Box flexDirection="column" height={termRows}>
+      <TabBar activeTab={activeTab} reviewCount={0} />
       <Box flexGrow={1}>
-        <Sidebar
-          sessions={sortedSessions}
-          selectedIndex={selectedIndex}
-          focused={focus === 'sidebar' && !creating && !settingsOpen}
-          prMap={prMap}
-          adoConfigured={adoConfigured}
-          sidebarWidth={sidebarWidth}
-          orphanPrs={orphanPrs}
-          prBaseUrl={
-            config.org && config.project && config.repo
-              ? `https://dev.azure.com/${config.org}/${config.project}/_git/${config.repo}`
-              : undefined
-          }
-        />
-        {settingsOpen && (
-          <SettingsPanel
-            config={config}
-            fieldIndex={settingsFieldIndex}
-            editingField={editingField}
-            editBuffer={editBuffer}
-          />
-        )}
-        {!settingsOpen && creating && (
-          <BranchPicker
-            filter={branchFilter}
-            branches={branches}
-            selectedIndex={branchIndex}
-          />
-        )}
-        {!settingsOpen && !creating && (
-          <TerminalView
-            content={hasTmux ? paneContent : '(tmux not available)'}
-            focused={focus === 'terminal'}
-          />
+        {activeTab === 'sessions' && (
+          <>
+            <Sidebar
+              sessions={sortedSessions}
+              selectedIndex={selectedIndex}
+              focused={focus === 'sidebar' && !creating && !settingsOpen}
+              prMap={prMap}
+              adoConfigured={adoConfigured}
+              sidebarWidth={sidebarWidth}
+              orphanPrs={orphanPrs}
+              prBaseUrl={
+                config.org && config.project && config.repo
+                  ? `https://dev.azure.com/${config.org}/${config.project}/_git/${config.repo}`
+                  : undefined
+              }
+            />
+            {settingsOpen && (
+              <SettingsPanel
+                config={config}
+                fieldIndex={settingsFieldIndex}
+                editingField={editingField}
+                editBuffer={editBuffer}
+              />
+            )}
+            {!settingsOpen && creating && (
+              <BranchPicker
+                filter={branchFilter}
+                branches={branches}
+                selectedIndex={branchIndex}
+              />
+            )}
+            {!settingsOpen && !creating && (
+              <TerminalView
+                content={hasTmux ? paneContent : '(tmux not available)'}
+                focused={focus === 'terminal'}
+              />
+            )}
+          </>
         )}
       </Box>
       <Box paddingX={1} justifyContent="space-between">

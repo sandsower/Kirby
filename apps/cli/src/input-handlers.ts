@@ -23,6 +23,7 @@ import type {
   ProjectConfig,
   GlobalConfig,
   PullRequestInfo,
+  ActiveTab,
 } from '@kirby/shared-types';
 import { SETTINGS_FIELDS } from './components/SettingsPanel.js';
 
@@ -59,6 +60,7 @@ export interface AppContext {
   editingField: string | null;
   settingsFieldIndex: number;
   editBuffer: string;
+  activeTab: ActiveTab;
   focus: 'sidebar' | 'terminal';
   selectedName: string | null;
   selectedSession: TmuxSession | undefined;
@@ -80,6 +82,7 @@ export interface AppContext {
   setSettingsFieldIndex: (v: number | ((prev: number) => number)) => void;
   setEditingField: (v: string | null) => void;
   setEditBuffer: (v: string | ((prev: string) => string)) => void;
+  setActiveTab: (v: ActiveTab) => void;
   setConfig: (v: Config | ((prev: Config) => Config)) => void;
   setFocus: (
     v:
