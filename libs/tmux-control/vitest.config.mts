@@ -4,7 +4,7 @@ export default defineConfig(() => ({
   root: __dirname,
   cacheDir: '../../node_modules/.vite/libs/tmux-control',
   test: {
-    name: '@workflow-manager/tmux-control',
+    name: '@kirby/tmux-control',
     watch: false,
     globals: true,
     environment: 'node',

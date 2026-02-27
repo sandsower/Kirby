@@ -10,7 +10,7 @@ export default defineConfig(() => ({
   //  plugins: [],
   // },
   test: {
-    name: '@workflow-manager/tmux-control',
+    name: '@kirby/tmux-control',
     watch: false,
     globals: true,
     environment: 'node',

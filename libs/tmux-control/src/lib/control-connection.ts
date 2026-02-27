@@ -5,9 +5,12 @@
  * connection over stdin/stdout. Parses the control mode protocol and exposes
  * an EventEmitter API for output notifications and command responses.
  */
-import { spawn, type ChildProcess } from "node:child_process";
-import { EventEmitter } from "node:events";
-import { createInterface, type Interface as ReadlineInterface } from "node:readline";
+import { spawn, type ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import {
+  createInterface,
+  type Interface as ReadlineInterface,
+} from 'node:readline';
 
 // --- Protocol types ---
 
@@ -27,8 +30,8 @@ export interface ControlConnectionEvents {
   exit: [string | undefined];
   error: [Error];
   ready: [];
-  "sessions-changed": [];
-  "session-changed": [{ id: string; name: string }];
+  'sessions-changed': [];
+  'session-changed': [{ id: string; name: string }];
 }
 
 // --- Escaping ---
@@ -46,15 +49,15 @@ export function unescapeOutput(escaped: string): string {
 // --- Connection ---
 
 export type ControlConnectionState =
-  | "disconnected"
-  | "connecting"
-  | "ready"
-  | "closed";
+  | 'disconnected'
+  | 'connecting'
+  | 'ready'
+  | 'closed';
 
 export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
   private proc: ChildProcess | null = null;
   private rl: ReadlineInterface | null = null;
-  private _state: ControlConnectionState = "disconnected";
+  private _state: ControlConnectionState = 'disconnected';
   private pendingCommands: Map<
     number,
     { resolve: (resp: CommandResponse) => void; output: string[] }
@@ -88,45 +91,51 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
    * Resolves when the initial %begin/%end handshake completes.
    */
   connect(cols: number, rows: number): Promise<void> {
-    if (this._state !== "disconnected") {
-      return Promise.reject(new Error(`Cannot connect: state is ${this._state}`));
+    if (this._state !== 'disconnected') {
+      return Promise.reject(
+        new Error(`Cannot connect: state is ${this._state}`)
+      );
     }
-    this._state = "connecting";
+    this._state = 'connecting';
 
     return new Promise((resolve, reject) => {
-      this.proc = spawn("tmux", ["-C", "attach-session", "-t", this._sessionName], {
-        stdio: ["pipe", "pipe", "pipe"],
-      });
+      this.proc = spawn(
+        'tmux',
+        ['-C', 'attach-session', '-t', this._sessionName],
+        {
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }
+      );
 
-      this.proc.stdin!.on("error", () => {
+      this.proc.stdin!.on('error', () => {
         // Absorb EPIPE / write errors on dead stdin — the "exit" handler manages cleanup
       });
 
-      this.proc.on("error", (err) => {
-        this._state = "closed";
+      this.proc.on('error', (err) => {
+        this._state = 'closed';
         reject(err);
-        this.emit("error", err);
+        this.emit('error', err);
       });
 
-      this.proc.on("exit", () => {
-        this._state = "closed";
+      this.proc.on('exit', () => {
+        this._state = 'closed';
         this.cleanup();
-        this.emit("exit", undefined);
+        this.emit('exit', undefined);
       });
 
       this.rl = createInterface({ input: this.proc.stdout! });
 
       let gotInitialEnd = false;
 
-      this.rl.on("line", (line) => {
+      this.rl.on('line', (line) => {
         // During initial handshake, wait for the first %end
         if (!gotInitialEnd) {
-          if (line.startsWith("%end ") || line.startsWith("%error ")) {
+          if (line.startsWith('%end ') || line.startsWith('%error ')) {
             gotInitialEnd = true;
-            this._state = "ready";
+            this._state = 'ready';
             // Set client size immediately
             this.sendCommand(`refresh-client -C ${cols}x${rows}`).then(() => {
-              this.emit("ready");
+              this.emit('ready');
               resolve();
             });
           }
@@ -136,8 +145,8 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
         this.parseLine(line);
       });
 
-      this.rl.on("close", () => {
-        this._state = "closed";
+      this.rl.on('close', () => {
+        this._state = 'closed';
         this.cleanup();
       });
     });
@@ -147,8 +156,8 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
    * Send a tmux command and get the response.
    */
   sendCommand(command: string): Promise<CommandResponse> {
-    if (this._state !== "ready" || !this.proc?.stdin?.writable) {
-      return Promise.reject(new Error("Not connected"));
+    if (this._state !== 'ready' || !this.proc?.stdin?.writable) {
+      return Promise.reject(new Error('Not connected'));
     }
 
     return new Promise((resolve) => {
@@ -157,7 +166,7 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
       const marker = { resolve, output: [] as string[] };
       // We store with key -1 as a "pending" marker; parseLine will assign the real cmdNumber.
       this.pendingCommands.set(-Date.now(), marker);
-      this.proc!.stdin!.write(command + "\n");
+      this.proc!.stdin!.write(command + '\n');
     });
   }
 
@@ -166,7 +175,7 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
    * This is much faster than spawning a separate process.
    */
   sendKeys(keys: string): void {
-    if (this._state !== "ready" || !this.proc?.stdin?.writable) return;
+    if (this._state !== 'ready' || !this.proc?.stdin?.writable) return;
     const target = this._paneId ?? this._sessionName;
     this.proc.stdin.write(`send-keys -t ${target} ${keys}\n`);
   }
@@ -175,7 +184,7 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
    * Send literal text to the session's active pane.
    */
   sendLiteral(text: string): void {
-    if (this._state !== "ready" || !this.proc?.stdin?.writable) return;
+    if (this._state !== 'ready' || !this.proc?.stdin?.writable) return;
     const target = this._paneId ?? this._sessionName;
     // Escape single quotes by ending the quote, adding escaped quote, starting new quote
     const escaped = text.replace(/'/g, "'\\''");
@@ -186,7 +195,7 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
    * Resize the control client (and thus the session's windows).
    */
   resize(cols: number, rows: number): void {
-    if (this._state !== "ready" || !this.proc?.stdin?.writable) return;
+    if (this._state !== 'ready' || !this.proc?.stdin?.writable) return;
     this.proc.stdin.write(`refresh-client -C ${cols}x${rows}\n`);
   }
 
@@ -206,12 +215,12 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
     if (this.proc) {
       // Sending an empty line causes tmux control client to detach
       if (this.proc.stdin?.writable) {
-        this.proc.stdin.write("\n");
+        this.proc.stdin.write('\n');
       }
       this.proc.kill();
     }
     this.cleanup();
-    this._state = "closed";
+    this._state = 'closed';
   }
 
   private cleanup(): void {
@@ -229,8 +238,8 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
       if (endMatch) {
         const cmdNumber = parseInt(endMatch[3]!, 10);
         if (cmdNumber === this.currentBlock.cmdNumber) {
-          const isError = endMatch[1] === "error";
-          const output = this.currentBlock.lines.join("\n");
+          const isError = endMatch[1] === 'error';
+          const output = this.currentBlock.lines.join('\n');
           this.currentBlock = null;
 
           // Find the oldest pending command and resolve it
@@ -266,14 +275,14 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
         this._paneId = paneId;
       }
       const data = unescapeOutput(outputMatch[2]!);
-      this.emit("output", { paneId, data });
+      this.emit('output', { paneId, data });
       return;
     }
 
     // %session-changed notification
     const sessionMatch = line.match(/^%session-changed \$(\d+) (.+)$/);
     if (sessionMatch) {
-      this.emit("session-changed", {
+      this.emit('session-changed', {
         id: `$${sessionMatch[1]}`,
         name: sessionMatch[2]!,
       });
@@ -281,16 +290,16 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
     }
 
     // %sessions-changed notification
-    if (line === "%sessions-changed") {
-      this.emit("sessions-changed");
+    if (line === '%sessions-changed') {
+      this.emit('sessions-changed');
       return;
     }
 
     // %exit notification
     const exitMatch = line.match(/^%exit\s*(.*)$/);
     if (exitMatch) {
-      this._state = "closed";
-      this.emit("exit", exitMatch[1] || undefined);
+      this._state = 'closed';
+      this.emit('exit', exitMatch[1] || undefined);
       return;
     }
 

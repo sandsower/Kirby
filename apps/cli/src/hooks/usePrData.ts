@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   fetchPullRequestsWithComments,
   isAdoConfigured,
-} from "@workflow-manager/azure-devops";
-import type { AdoConfig } from "@workflow-manager/azure-devops";
-import type { BranchPrMap, Config } from "@workflow-manager/shared-types";
+} from '@kirby/azure-devops';
+import type { AdoConfig } from '@kirby/azure-devops';
+import type { BranchPrMap, Config } from '@kirby/shared-types';
 
 export function usePrData(config: Config, refreshInterval = 60000) {
   const [prMap, setPrMap] = useState<BranchPrMap>({});
@@ -42,7 +42,10 @@ export function usePrData(config: Config, refreshInterval = 60000) {
     mountedRef.current = true;
     if (!isAdoConfigured(config)) return;
     refresh();
-    const interval = setInterval(refresh, config.prPollInterval ?? refreshInterval);
+    const interval = setInterval(
+      refresh,
+      config.prPollInterval ?? refreshInterval
+    );
     return () => {
       mountedRef.current = false;
       clearInterval(interval);

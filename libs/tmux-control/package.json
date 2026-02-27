@@ -1,5 +1,5 @@
 {
-  "name": "@workflow-manager/tmux-control",
+  "name": "@kirby/tmux-control",
   "version": "0.0.1",
   "private": true,
   "type": "module",

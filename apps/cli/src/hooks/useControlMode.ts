@@ -1,7 +1,7 @@
-import { useEffect, useRef, useCallback } from "react";
-import type { Key } from "ink";
-import { hasSession } from "@workflow-manager/tmux-manager";
-import { ControlConnection } from "@workflow-manager/tmux-control";
+import { useEffect, useRef, useCallback } from 'react';
+import type { Key } from 'ink';
+import { hasSession } from '@kirby/tmux-manager';
+import { ControlConnection } from '@kirby/tmux-control';
 
 export function useControlMode(
   sessionName: string | null,
@@ -16,9 +16,9 @@ export function useControlMode(
   // Clamp capture-pane output to paneRows lines to prevent overflow
   const clampContent = useCallback(
     (raw: string) => {
-      const lines = raw.split("\n");
+      const lines = raw.split('\n');
       return lines.length > paneRows
-        ? lines.slice(0, paneRows).join("\n")
+        ? lines.slice(0, paneRows).join('\n')
         : raw;
     },
     [paneRows]
@@ -30,7 +30,7 @@ export function useControlMode(
     renderTimer.current = setTimeout(() => {
       renderTimer.current = null;
       const conn = connRef.current;
-      if (conn && conn.state === "ready") {
+      if (conn && conn.state === 'ready') {
         conn.capturePane().then(
           (content) => {
             // Only update if this connection is still the active one
@@ -53,23 +53,23 @@ export function useControlMode(
     // Don't connect if the tmux session doesn't exist yet —
     // it will be auto-created when the user tabs into the terminal pane
     if (!hasSession(sessionName)) {
-      setPaneContent("(press Tab to start session)");
+      setPaneContent('(press Tab to start session)');
       return;
     }
 
     const conn = new ControlConnection(sessionName);
     connRef.current = conn;
 
-    conn.on("output", () => {
+    conn.on('output', () => {
       scheduleRender();
     });
 
-    conn.on("exit", () => {
-      setPaneContent("(session disconnected)");
+    conn.on('exit', () => {
+      setPaneContent('(session disconnected)');
     });
 
-    conn.on("error", () => {
-      setPaneContent("(connection error)");
+    conn.on('error', () => {
+      setPaneContent('(connection error)');
     });
 
     conn
@@ -81,7 +81,7 @@ export function useControlMode(
         }
       })
       .catch(() => {
-        setPaneContent("(failed to connect)");
+        setPaneContent('(failed to connect)');
       });
 
     return () => {
@@ -99,40 +99,37 @@ export function useControlMode(
   // Resize the pane without reconnecting
   useEffect(() => {
     const conn = connRef.current;
-    if (conn && conn.state === "ready") {
+    if (conn && conn.state === 'ready') {
       conn.resize(paneCols, paneRows);
       scheduleRender();
     }
   }, [paneCols, paneRows, scheduleRender]);
 
   // Send input through the control connection
-  const sendInput = useCallback(
-    (input: string, key: Key) => {
-      const conn = connRef.current;
-      if (!conn || conn.state !== "ready") return;
+  const sendInput = useCallback((input: string, key: Key) => {
+    const conn = connRef.current;
+    if (!conn || conn.state !== 'ready') return;
 
-      if (key.return) {
-        conn.sendKeys("Enter");
-      } else if (key.backspace || key.delete) {
-        conn.sendKeys("BSpace");
-      } else if (key.upArrow) {
-        conn.sendKeys("Up");
-      } else if (key.downArrow) {
-        conn.sendKeys("Down");
-      } else if (key.leftArrow) {
-        conn.sendKeys("Left");
-      } else if (key.rightArrow) {
-        conn.sendKeys("Right");
-      } else if (key.tab) {
-        // Tab is reserved for focus switching, don't forward
-      } else if (key.ctrl && input === "c") {
-        conn.sendKeys("C-c");
-      } else if (input) {
-        conn.sendLiteral(input);
-      }
-    },
-    []
-  );
+    if (key.return) {
+      conn.sendKeys('Enter');
+    } else if (key.backspace || key.delete) {
+      conn.sendKeys('BSpace');
+    } else if (key.upArrow) {
+      conn.sendKeys('Up');
+    } else if (key.downArrow) {
+      conn.sendKeys('Down');
+    } else if (key.leftArrow) {
+      conn.sendKeys('Left');
+    } else if (key.rightArrow) {
+      conn.sendKeys('Right');
+    } else if (key.tab) {
+      // Tab is reserved for focus switching, don't forward
+    } else if (key.ctrl && input === 'c') {
+      conn.sendKeys('C-c');
+    } else if (input) {
+      conn.sendLiteral(input);
+    }
+  }, []);
 
   return { sendInput };
 }

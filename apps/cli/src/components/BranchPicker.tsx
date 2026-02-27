@@ -1,4 +1,4 @@
-import { Text, Box } from "ink";
+import { Text, Box } from 'ink';
 
 export function BranchPicker({
   filter,
@@ -17,16 +17,11 @@ export function BranchPicker({
   );
 
   return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      paddingX={1}
-      overflow="hidden"
-    >
+    <Box flexDirection="column" flexGrow={1} paddingX={1} overflow="hidden">
       <Text bold color="yellow">
         Branch Picker
       </Text>
-      <Text dimColor>{"─".repeat(40)}</Text>
+      <Text dimColor>{'─'.repeat(40)}</Text>
       {filtered.length === 0 ? (
         <Box flexDirection="column">
           {filter.length > 0 ? (
@@ -43,8 +38,8 @@ export function BranchPicker({
             const isSelected = i === selectedIndex;
             return (
               <Text key={b}>
-                <Text color={isSelected ? "cyan" : undefined}>
-                  {isSelected ? "› " : "  "}
+                <Text color={isSelected ? 'cyan' : undefined}>
+                  {isSelected ? '› ' : '  '}
                 </Text>
                 <Text bold={isSelected}>{b}</Text>
               </Text>

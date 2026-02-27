@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from "react";
-import { execSync } from "node:child_process";
-import { render, Text, Box, useInput, useApp, useStdout } from "ink";
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { execSync } from 'node:child_process';
+import { render, Text, Box, useInput, useApp, useStdout } from 'ink';
 import {
   isAvailable,
   listSessions,
@@ -9,29 +9,90 @@ import {
   listBranches,
   listWorktrees,
   branchToSessionName,
-} from "@workflow-manager/tmux-manager";
-import type { TmuxSession } from "@workflow-manager/tmux-manager";
+} from '@kirby/tmux-manager';
+import type { TmuxSession } from '@kirby/tmux-manager';
 import {
   readConfig,
   isAdoConfigured,
   autoDetectProjectConfig,
-} from "@workflow-manager/azure-devops";
-import type { BranchPrMap, PullRequestInfo, Config } from "@workflow-manager/shared-types";
-import { Sidebar } from "./components/Sidebar.js";
-import { TerminalView } from "./components/TerminalView.js";
-import { BranchPicker } from "./components/BranchPicker.js";
-import { SettingsPanel } from "./components/SettingsPanel.js";
-import { usePrData } from "./hooks/usePrData.js";
-import { useControlMode } from "./hooks/useControlMode.js";
+} from '@kirby/azure-devops';
+import type { PullRequestInfo, Config } from '@kirby/shared-types';
+import { Sidebar } from './components/Sidebar.js';
+import { TerminalView } from './components/TerminalView.js';
+import { BranchPicker } from './components/BranchPicker.js';
+import { SettingsPanel } from './components/SettingsPanel.js';
+import { usePrData } from './hooks/usePrData.js';
+import { useControlMode } from './hooks/useControlMode.js';
 import {
   handleBranchPickerInput,
   handleConfirmDeleteInput,
   handleSettingsInput,
   handleGlobalInput,
-} from "./input-handlers.js";
-import type { AppContext } from "./input-handlers.js";
+} from './input-handlers.js';
+import type { AppContext } from './input-handlers.js';
 
-type Focus = "sidebar" | "terminal";
+type Focus = 'sidebar' | 'terminal';
+
+function StatusBar({
+  confirmDelete,
+  confirmInput,
+  creating,
+  branchFilter,
+  statusMessage,
+  prError,
+  sessionCount,
+  focus,
+  hasTmux,
+  adoConfigured,
+}: {
+  confirmDelete: { branch: string; sessionName: string; reason: string } | null;
+  confirmInput: string;
+  creating: boolean;
+  branchFilter: string;
+  statusMessage: string | null;
+  prError: string | null;
+  sessionCount: number;
+  focus: Focus;
+  hasTmux: boolean;
+  adoConfigured: boolean;
+}) {
+  if (confirmDelete) {
+    return (
+      <Text>
+        <Text color="red">Warning: {confirmDelete.reason}. Type </Text>
+        <Text bold color="yellow">
+          {confirmDelete.branch}
+        </Text>
+        <Text color="red"> to confirm: </Text>
+        <Text color="cyan">{confirmInput}</Text>
+        <Text dimColor>_</Text>
+        <Text dimColor> · Esc cancel</Text>
+      </Text>
+    );
+  }
+  if (creating) {
+    return (
+      <Text>
+        Branch: <Text color="cyan">{branchFilter}</Text>
+        <Text dimColor>_</Text>
+        <Text dimColor> · Enter select · Esc cancel</Text>
+      </Text>
+    );
+  }
+  if (statusMessage) {
+    return <Text color="yellow">{statusMessage}</Text>;
+  }
+  if (prError) {
+    return <Text color="red">PR error: {prError}</Text>;
+  }
+  return (
+    <Text dimColor>
+      kirby · {sessionCount} sessions · focus: <Text color="cyan">{focus}</Text>{' '}
+      · tmux: {hasTmux ? '✓' : '✕'}
+      {!adoConfigured ? ' · (s to configure ADO)' : ''}
+    </Text>
+  );
+}
 
 // --- App ---
 
@@ -45,41 +106,65 @@ function App() {
   const sidebarWidth = adoConfigured ? 48 : 24;
   const paneCols = Math.max(20, termCols - sidebarWidth - 2);
   const paneRows = Math.max(5, termRows - 3); // 1 heading + 1 separator + 1 status bar
-  const [focus, setFocus] = useState<Focus>("sidebar");
+  const [focus, setFocus] = useState<Focus>('sidebar');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [sessions, setSessions] = useState<TmuxSession[]>([]);
-  const [paneContent, setPaneContent] = useState("(loading...)");
+  const [paneContent, setPaneContent] = useState('(loading...)');
   const [hasTmux, setHasTmux] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [branchFilter, setBranchFilter] = useState("");
+  const [branchFilter, setBranchFilter] = useState('');
   const [branchIndex, setBranchIndex] = useState(0);
   const [branches, setBranches] = useState<string[]>([]);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ branch: string; sessionName: string; reason: string } | null>(null);
-  const [confirmInput, setConfirmInput] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<{
+    branch: string;
+    sessionName: string;
+    reason: string;
+  } | null>(null);
+  const [confirmInput, setConfirmInput] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsFieldIndex, setSettingsFieldIndex] = useState(0);
   const [editingField, setEditingField] = useState<string | null>(null);
-  const [editBuffer, setEditBuffer] = useState("");
+  const [editBuffer, setEditBuffer] = useState('');
   const [reconnectKey, setReconnectKey] = useState(0);
   const { prMap, error: prError, refresh: refreshPr } = usePrData(config);
 
-  // Orphan PRs: user's PRs that don't have a matching session (worktree-backed or tmux)
+  // Orphan PRs: user's PRs that don't have a matching worktree session
   const orphanPrs = useMemo(() => {
     if (!config.email) return [];
+    const email = config.email.toLowerCase();
     const sessionNames = new Set(sessions.map((s) => s.name));
     return Object.values(prMap)
-      .filter((pr): pr is PullRequestInfo => {
-        if (!pr) return false;
-        if (!pr.createdByUniqueName) return false;
-        if (pr.createdByUniqueName.toLowerCase() !== config.email!.toLowerCase()) return false;
-        return !sessionNames.has(branchToSessionName(pr.sourceBranch));
-      });
+      .filter(
+        (pr): pr is PullRequestInfo =>
+          pr != null &&
+          pr.createdByUniqueName?.toLowerCase() === email &&
+          !sessionNames.has(branchToSessionName(pr.sourceBranch))
+      )
+      .sort((a, b) => b.pullRequestId - a.pullRequestId);
   }, [prMap, sessions, config.email]);
 
-  const totalItems = sessions.length + orphanPrs.length;
-  const selectedSession = selectedIndex < sessions.length ? sessions[selectedIndex] : undefined;
+  // Sort sessions by associated PR number (newest first), sessions without a PR go last
+  const sortedSessions = useMemo(() => {
+    return [...sessions].sort((a, b) => {
+      const prA = Object.values(prMap).find(
+        (pr) => pr && branchToSessionName(pr.sourceBranch) === a.name
+      );
+      const prB = Object.values(prMap).find(
+        (pr) => pr && branchToSessionName(pr.sourceBranch) === b.name
+      );
+      const idA = prA?.pullRequestId ?? -Infinity;
+      const idB = prB?.pullRequestId ?? -Infinity;
+      return idB - idA;
+    });
+  }, [sessions, prMap]);
+
+  const totalItems = sortedSessions.length + orphanPrs.length;
+  const selectedSession =
+    selectedIndex < sortedSessions.length
+      ? sortedSessions[selectedIndex]
+      : undefined;
   const selectedName = selectedSession?.name ?? null;
 
   // Clamp selectedIndex when total items shrinks
@@ -140,7 +225,7 @@ function App() {
     killSession(sessionName);
     removeWorktree(branch);
     try {
-      execSync(`git branch -d "${branch}"`, { stdio: "pipe" });
+      execSync(`git branch -d "${branch}"`, { stdio: 'pipe' });
     } catch {
       // Branch delete may fail if not fully merged — that's ok, worktree is gone
     }
@@ -161,13 +246,44 @@ function App() {
 
   // Build context object for input handlers
   const ctx: AppContext = {
-    config, branches, branchFilter, branchIndex, paneCols, paneRows,
-    confirmDelete, confirmInput, editingField, settingsFieldIndex, editBuffer,
-    focus, selectedName, selectedSession, selectedIndex, sessions, orphanPrs, totalItems,
-    setCreating, setBranchFilter, setBranchIndex, setSelectedIndex,
-    setConfirmDelete, setConfirmInput, setSettingsOpen, setSettingsFieldIndex,
-    setEditingField, setEditBuffer, setConfig, setFocus, setReconnectKey, setBranches,
-    flashStatus, refreshSessions, refreshPr, performDelete, sendInput, exit,
+    config,
+    branches,
+    branchFilter,
+    branchIndex,
+    paneCols,
+    paneRows,
+    confirmDelete,
+    confirmInput,
+    editingField,
+    settingsFieldIndex,
+    editBuffer,
+    focus,
+    selectedName,
+    selectedSession,
+    selectedIndex,
+    sessions: sortedSessions,
+    orphanPrs,
+    totalItems,
+    setCreating,
+    setBranchFilter,
+    setBranchIndex,
+    setSelectedIndex,
+    setConfirmDelete,
+    setConfirmInput,
+    setSettingsOpen,
+    setSettingsFieldIndex,
+    setEditingField,
+    setEditBuffer,
+    setConfig,
+    setFocus,
+    setReconnectKey,
+    setBranches,
+    flashStatus,
+    refreshSessions,
+    refreshPr,
+    performDelete,
+    sendInput,
+    exit,
   };
 
   useInput((input, key) => {
@@ -181,63 +297,55 @@ function App() {
     <Box flexDirection="column" height={termRows}>
       <Box flexGrow={1}>
         <Sidebar
-          sessions={sessions}
+          sessions={sortedSessions}
           selectedIndex={selectedIndex}
-          focused={focus === "sidebar" && !creating && !settingsOpen}
+          focused={focus === 'sidebar' && !creating && !settingsOpen}
           prMap={prMap}
           adoConfigured={adoConfigured}
           sidebarWidth={sidebarWidth}
           orphanPrs={orphanPrs}
+          prBaseUrl={
+            config.org && config.project && config.repo
+              ? `https://dev.azure.com/${config.org}/${config.project}/_git/${config.repo}`
+              : undefined
+          }
         />
-        {settingsOpen ? (
+        {settingsOpen && (
           <SettingsPanel
             config={config}
             fieldIndex={settingsFieldIndex}
             editingField={editingField}
             editBuffer={editBuffer}
           />
-        ) : creating ? (
+        )}
+        {!settingsOpen && creating && (
           <BranchPicker
             filter={branchFilter}
             branches={branches}
             selectedIndex={branchIndex}
           />
-        ) : (
+        )}
+        {!settingsOpen && !creating && (
           <TerminalView
-            content={hasTmux ? paneContent : "(tmux not available)"}
-            focused={focus === "terminal"}
+            content={hasTmux ? paneContent : '(tmux not available)'}
+            focused={focus === 'terminal'}
           />
         )}
       </Box>
       <Box paddingX={1} justifyContent="space-between">
         <Box>
-          {confirmDelete ? (
-            <Text>
-              <Text color="red">Warning: {confirmDelete.reason}. Type </Text>
-              <Text bold color="yellow">{confirmDelete.branch}</Text>
-              <Text color="red"> to confirm: </Text>
-              <Text color="cyan">{confirmInput}</Text>
-              <Text dimColor>_</Text>
-              <Text dimColor> · Esc cancel</Text>
-            </Text>
-          ) : creating ? (
-            <Text>
-              Branch: <Text color="cyan">{branchFilter}</Text>
-              <Text dimColor>_</Text>
-              <Text dimColor> · Enter select · Esc cancel</Text>
-            </Text>
-          ) : statusMessage ? (
-            <Text color="yellow">{statusMessage}</Text>
-          ) : prError ? (
-            <Text color="red">PR error: {prError}</Text>
-          ) : (
-            <Text dimColor>
-              workflow-manager · {sessions.length} sessions ·{" "}
-              focus: <Text color="cyan">{focus}</Text> · tmux:{" "}
-              {hasTmux ? "✓" : "✕"}
-              {!adoConfigured ? " · (s to configure ADO)" : ""}
-            </Text>
-          )}
+          <StatusBar
+            confirmDelete={confirmDelete}
+            confirmInput={confirmInput}
+            creating={creating}
+            branchFilter={branchFilter}
+            statusMessage={statusMessage}
+            prError={prError}
+            sessionCount={sortedSessions.length}
+            focus={focus}
+            hasTmux={hasTmux}
+            adoConfigured={adoConfigured}
+          />
         </Box>
         <Text dimColor>{process.cwd()}</Text>
       </Box>

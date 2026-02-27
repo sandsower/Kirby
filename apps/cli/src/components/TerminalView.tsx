@@ -1,4 +1,4 @@
-import { Text, Box } from "ink";
+import { Text, Box } from 'ink';
 
 export function TerminalView({
   content,
@@ -8,16 +8,11 @@ export function TerminalView({
   focused: boolean;
 }) {
   return (
-    <Box
-      flexDirection="column"
-      flexGrow={1}
-      paddingX={1}
-      overflow="hidden"
-    >
-      <Text bold color={focused ? "green" : "gray"}>
-        Terminal {focused ? "(typing)" : "(view only)"}
+    <Box flexDirection="column" flexGrow={1} paddingX={1} overflow="hidden">
+      <Text bold color={focused ? 'green' : 'gray'}>
+        Agent
       </Text>
-      <Text dimColor>{"─".repeat(40)}</Text>
+      <Text dimColor>{'─'.repeat(40)}</Text>
       <Text wrap="truncate">{content}</Text>
     </Box>
   );

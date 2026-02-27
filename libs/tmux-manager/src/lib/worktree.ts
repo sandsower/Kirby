@@ -4,9 +4,9 @@
  * Manages .tui/worktrees/ directory for per-branch worktrees
  * used by the TUI to give each Claude session its own checkout.
  */
-import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 export interface WorktreeInfo {
   path: string;
@@ -16,7 +16,7 @@ export interface WorktreeInfo {
 
 /** Convert a branch name to its .tui/worktrees/ relative directory */
 function worktreeDir(branch: string): string {
-  return ".tui/worktrees/" + branch.replace(/\//g, "-");
+  return '.tui/worktrees/' + branch.replace(/\//g, '-');
 }
 
 /**
@@ -36,16 +36,16 @@ export function createWorktree(branch: string): string | null {
   try {
     // Try existing branch first
     execSync(`git worktree add "${relativeDir}" "${branch}"`, {
-      encoding: "utf8",
-      stdio: "pipe",
+      encoding: 'utf8',
+      stdio: 'pipe',
     });
     return absoluteDir;
   } catch {
     try {
       // Branch doesn't exist — create new branch from HEAD
       execSync(`git worktree add -b "${branch}" "${relativeDir}"`, {
-        encoding: "utf8",
-        stdio: "pipe",
+        encoding: 'utf8',
+        stdio: 'pipe',
       });
       return absoluteDir;
     } catch {
@@ -62,8 +62,8 @@ export function removeWorktree(branch: string): boolean {
   const relativeDir = worktreeDir(branch);
   try {
     execSync(`git worktree remove "${relativeDir}"`, {
-      encoding: "utf8",
-      stdio: "pipe",
+      encoding: 'utf8',
+      stdio: 'pipe',
     });
     return true;
   } catch {
@@ -80,11 +80,11 @@ export function canRemoveBranch(
 ): { safe: true } | { safe: false; reason: string } {
   // Protected branch guard
   if (
-    branch === "main" ||
-    branch === "master" ||
-    branch.startsWith("gitbutler")
+    branch === 'main' ||
+    branch === 'master' ||
+    branch.startsWith('gitbutler')
   ) {
-    return { safe: false, reason: "protected branch" };
+    return { safe: false, reason: 'protected branch' };
   }
 
   const dir = worktreeDir(branch);
@@ -92,11 +92,11 @@ export function canRemoveBranch(
   // Uncommitted changes
   try {
     const status = execSync(`git -C "${dir}" status --porcelain`, {
-      encoding: "utf8",
-      stdio: "pipe",
+      encoding: 'utf8',
+      stdio: 'pipe',
     });
     if (status.trim().length > 0) {
-      return { safe: false, reason: "uncommitted changes" };
+      return { safe: false, reason: 'uncommitted changes' };
     }
   } catch {
     // Worktree may not exist — skip this check
@@ -104,12 +104,12 @@ export function canRemoveBranch(
 
   // Not pushed to upstream
   try {
-    const unpushed = execSync(
-      `git log "${branch}" --not --remotes -1`,
-      { encoding: "utf8", stdio: "pipe" }
-    );
+    const unpushed = execSync(`git log "${branch}" --not --remotes -1`, {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
     if (unpushed.trim().length > 0) {
-      return { safe: false, reason: "not pushed to upstream" };
+      return { safe: false, reason: 'not pushed to upstream' };
     }
   } catch {
     // Branch may not have remote tracking — skip
@@ -122,11 +122,11 @@ export function canRemoveBranch(
 export function listBranches(): string[] {
   try {
     const output = execSync("git branch --format='%(refname:short)'", {
-      encoding: "utf8",
+      encoding: 'utf8',
     });
     return output
       .trim()
-      .split("\n")
+      .split('\n')
       .filter((b) => b.length > 0);
   } catch {
     return [];
@@ -136,20 +136,20 @@ export function listBranches(): string[] {
 /** Parse `git worktree list --porcelain` output into WorktreeInfo[] */
 export function parseWorktrees(output: string): WorktreeInfo[] {
   const results: WorktreeInfo[] = [];
-  const blocks = output.split("\n\n").filter((b) => b.trim().length > 0);
+  const blocks = output.split('\n\n').filter((b) => b.trim().length > 0);
 
   for (const block of blocks) {
-    const lines = block.trim().split("\n");
-    let path = "";
-    let branch = "";
+    const lines = block.trim().split('\n');
+    let path = '';
+    let branch = '';
     let bare = false;
 
     for (const line of lines) {
-      if (line.startsWith("worktree ")) {
-        path = line.slice("worktree ".length);
-      } else if (line.startsWith("branch refs/heads/")) {
-        branch = line.slice("branch refs/heads/".length);
-      } else if (line === "bare") {
+      if (line.startsWith('worktree ')) {
+        path = line.slice('worktree '.length);
+      } else if (line.startsWith('branch refs/heads/')) {
+        branch = line.slice('branch refs/heads/'.length);
+      } else if (line === 'bare') {
         bare = true;
       }
     }
@@ -168,11 +168,11 @@ export function parseWorktrees(output: string): WorktreeInfo[] {
  */
 export function listWorktrees(): WorktreeInfo[] {
   try {
-    const output = execSync("git worktree list --porcelain", {
-      encoding: "utf8",
+    const output = execSync('git worktree list --porcelain', {
+      encoding: 'utf8',
     });
     return parseWorktrees(output).filter(
-      (w) => !w.bare && w.path.includes(".tui/worktrees/")
+      (w) => !w.bare && w.path.includes('.tui/worktrees/')
     );
   } catch {
     return [];

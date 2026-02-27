@@ -1,9 +1,17 @@
-import { Text } from "ink";
-import type { PullRequestInfo } from "@workflow-manager/shared-types";
+import { Text, Box } from 'ink';
+import type { PullRequestInfo } from '@kirby/shared-types';
 
-export function PrBadge({ pr }: { pr: PullRequestInfo | null | undefined }) {
-  if (pr === null || pr === undefined) {
-    return <Text dimColor>{"    (no PR)"}</Text>;
+export function PrBadge({
+  pr,
+  url,
+  sidebarWidth,
+}: {
+  pr: PullRequestInfo | null | undefined;
+  url?: string;
+  sidebarWidth: number;
+}) {
+  if (pr == null) {
+    return <Text dimColor>{'  (no PR)'}</Text>;
   }
 
   const approvedCount = pr.reviewers.filter((r) => r.vote >= 5).length;
@@ -13,31 +21,53 @@ export function PrBadge({ pr }: { pr: PullRequestInfo | null | undefined }) {
 
   let reviewColor: string;
   if (hasRejected) {
-    reviewColor = "red";
+    reviewColor = 'red';
   } else if (hasWaiting) {
-    reviewColor = "yellow";
+    reviewColor = 'yellow';
   } else if (totalReviewers > 0 && approvedCount === totalReviewers) {
-    reviewColor = "green";
+    reviewColor = 'green';
   } else {
-    reviewColor = "gray";
+    reviewColor = 'gray';
   }
 
   const reviewText =
-    totalReviewers > 0 ? `${approvedCount}/${totalReviewers} approved` : "";
+    totalReviewers > 0 ? `${approvedCount}/${totalReviewers} approved` : '';
+
+  const allApproved = totalReviewers > 0 && approvedCount === totalReviewers;
+  const needsAttention = pr.activeCommentCount > 0 || hasWaiting;
+
+  let statusEmoji = '';
+  if (allApproved && !needsAttention) {
+    statusEmoji = '⭐';
+  } else if (needsAttention) {
+    statusEmoji = '🔔';
+  }
+
+  const innerWidth = Math.max(10, sidebarWidth - 2);
 
   return (
-    <Text>
-      <Text dimColor>{"    "}</Text>
-      {pr.isDraft ? (
-        <Text dimColor>DRAFT </Text>
+    <Box width={innerWidth}>
+      <Text>
+        <Text dimColor>{'  '}</Text>
+        <Text color="blue">
+          {url
+            ? `\x1b]8;;${url}\x07#${pr.pullRequestId}\x1b]8;;\x07`
+            : `#${pr.pullRequestId}`}
+        </Text>
+        {reviewText ? (
+          <Text color={reviewColor}>{`  ${reviewText}`}</Text>
+        ) : null}
+        {pr.activeCommentCount > 0 ? (
+          <Text color="yellow">{`  ${pr.activeCommentCount} comment${
+            pr.activeCommentCount !== 1 ? 's' : ''
+          }`}</Text>
+        ) : null}
+      </Text>
+      {statusEmoji ? (
+        <Box flexGrow={1} justifyContent="flex-end">
+          <Text>{statusEmoji}</Text>
+        </Box>
       ) : null}
-      <Text color="blue">PR#{pr.pullRequestId}</Text>
-      {reviewText ? (
-        <Text color={reviewColor}>{`  ${reviewText}`}</Text>
-      ) : null}
-      {pr.activeCommentCount > 0 ? (
-        <Text color="yellow">{`  ${pr.activeCommentCount} comment${pr.activeCommentCount !== 1 ? "s" : ""}`}</Text>
-      ) : null}
-    </Text>
+    </Box>
   );
 }

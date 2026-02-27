@@ -10,7 +10,7 @@ export default defineConfig(() => ({
   //  plugins: [],
   // },
   test: {
-    name: '@workflow-manager/azure-devops',
+    name: '@kirby/azure-devops',
     watch: false,
     globals: true,
     environment: 'node',

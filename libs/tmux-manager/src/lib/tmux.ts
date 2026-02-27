@@ -5,7 +5,7 @@
  * Hot-path I/O (capturePane, sendKeys, sendLiteral) lives in
  * ControlConnection (tmux-control library) instead.
  */
-import { execSync } from "node:child_process";
+import { execSync } from 'node:child_process';
 
 export interface TmuxSession {
   name: string;
@@ -17,7 +17,7 @@ export interface TmuxSession {
 /** Check if tmux is installed and available */
 export function isAvailable(): boolean {
   try {
-    execSync("tmux -V", { stdio: "ignore" });
+    execSync('tmux -V', { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -29,7 +29,7 @@ export function listSessions(): TmuxSession[] {
   try {
     const output = execSync(
       "tmux list-sessions -F '#{session_name}|#{session_windows}|#{session_created}|#{session_attached}'",
-      { encoding: "utf8" }
+      { encoding: 'utf8' }
     );
     return parseSessions(output);
   } catch {
@@ -41,15 +41,15 @@ export function listSessions(): TmuxSession[] {
 export function parseSessions(output: string): TmuxSession[] {
   return output
     .trim()
-    .split("\n")
+    .split('\n')
     .filter((line) => line.length > 0)
     .map((line) => {
-      const [name, windows, created, attached] = line.split("|");
+      const [name, windows, created, attached] = line.split('|');
       return {
         name: name!,
         windows: parseInt(windows!, 10),
         created: parseInt(created!, 10),
-        attached: attached === "1",
+        attached: attached === '1',
       };
     });
 }
@@ -58,7 +58,7 @@ export function parseSessions(output: string): TmuxSession[] {
 export function hasSession(name: string): boolean {
   const safeName = validateSessionName(name);
   try {
-    execSync(`tmux has-session -t ${safeName}`, { stdio: "ignore" });
+    execSync(`tmux has-session -t ${safeName}`, { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -78,9 +78,9 @@ export function createSession(
   if (cols !== undefined) cmd += ` -x ${cols}`;
   if (rows !== undefined) cmd += ` -y ${rows}`;
   if (cwd !== undefined) cmd += ` -c "${cwd}"`;
-  if (command !== undefined) cmd += ` ${command}`;
+  if (command !== undefined) cmd += ` "${command}"`;
   try {
-    execSync(cmd, { stdio: "ignore" });
+    execSync(cmd, { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -91,7 +91,7 @@ export function createSession(
 export function killSession(name: string): boolean {
   const safeName = validateSessionName(name);
   try {
-    execSync(`tmux kill-session -t ${safeName}`, { stdio: "ignore" });
+    execSync(`tmux kill-session -t ${safeName}`, { stdio: 'ignore' });
     return true;
   } catch {
     return false;
@@ -100,7 +100,7 @@ export function killSession(name: string): boolean {
 
 /** Convert a git branch name to a valid tmux session name (replace / with -) */
 export function branchToSessionName(branch: string): string {
-  return branch.replace(/\//g, "-");
+  return branch.replace(/\//g, '-');
 }
 
 /** Validate a tmux session name (alphanumeric, hyphens, underscores, dots) */

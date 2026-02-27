@@ -30,6 +30,8 @@ export interface Config {
   email?: string;
   /** PR data polling interval in ms */
   prPollInterval?: number;
+  /** AI tool command to run in new sessions */
+  aiCommand?: string;
 }
 
 export const DEFAULT_CONFIG: Config = {};
@@ -37,6 +39,7 @@ export const DEFAULT_CONFIG: Config = {};
 export interface GlobalConfig {
   pat?: string;
   prPollInterval?: number;
+  aiCommand?: string;
 }
 
 export interface ProjectConfig {

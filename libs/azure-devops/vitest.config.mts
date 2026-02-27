@@ -4,7 +4,7 @@ export default defineConfig(() => ({
   root: __dirname,
   cacheDir: '../../node_modules/.vite/libs/azure-devops',
   test: {
-    name: '@workflow-manager/azure-devops',
+    name: '@kirby/azure-devops',
     watch: false,
     globals: true,
     environment: 'node',

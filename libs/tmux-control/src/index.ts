@@ -5,4 +5,4 @@ export {
   type OutputEvent,
   type CommandResponse,
   type ControlConnectionEvents,
-} from "./lib/control-connection.js";
+} from './lib/control-connection.js';

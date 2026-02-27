@@ -3,7 +3,7 @@ import type {
   PullRequestReviewer,
   ReviewerVote,
   BranchPrMap,
-} from "@workflow-manager/shared-types";
+} from '@kirby/shared-types';
 
 export interface AdoConfig {
   org: string;
@@ -14,8 +14,8 @@ export interface AdoConfig {
 
 function authHeaders(pat: string): Record<string, string> {
   return {
-    Authorization: `Basic ${Buffer.from(`:${pat}`).toString("base64")}`,
-    "Content-Type": "application/json",
+    Authorization: `Basic ${Buffer.from(`:${pat}`).toString('base64')}`,
+    'Content-Type': 'application/json',
   };
 }
 
@@ -32,7 +32,7 @@ export function parseReviewer(raw: {
   const vote = raw.vote ?? 0;
   const validVotes: ReviewerVote[] = [10, 5, 0, -5, -10];
   return {
-    displayName: raw.displayName ?? "Unknown",
+    displayName: raw.displayName ?? 'Unknown',
     vote: validVotes.includes(vote as ReviewerVote)
       ? (vote as ReviewerVote)
       : 0,
@@ -45,8 +45,8 @@ export function parsePullRequest(raw: {
   isDraft?: boolean;
   reviewers?: Array<{ displayName?: string; vote?: number }>;
   createdBy?: { uniqueName?: string };
-}): Omit<PullRequestInfo, "activeCommentCount"> {
-  const branch = (raw.sourceRefName ?? "").replace(/^refs\/heads\//, "");
+}): Omit<PullRequestInfo, 'activeCommentCount'> {
+  const branch = (raw.sourceRefName ?? '').replace(/^refs\/heads\//, '');
   return {
     pullRequestId: raw.pullRequestId ?? 0,
     sourceBranch: branch,
@@ -63,10 +63,10 @@ export function countActiveThreads(
   }>
 ): number {
   return threads.filter((t) => {
-    if (t.status !== "active") return false;
+    if (t.status !== 'active') return false;
     // Exclude system-only threads (no human comments)
     const hasHumanComment = (t.comments ?? []).some(
-      (c) => c.commentType !== "system"
+      (c) => c.commentType !== 'system'
     );
     return hasHumanComment;
   }).length;
@@ -76,8 +76,10 @@ export function countActiveThreads(
 
 export async function fetchActivePullRequests(
   config: AdoConfig
-): Promise<Array<Omit<PullRequestInfo, "activeCommentCount">>> {
-  const url = `${baseUrl(config)}/pullrequests?searchCriteria.status=active&api-version=7.1`;
+): Promise<Array<Omit<PullRequestInfo, 'activeCommentCount'>>> {
+  const url = `${baseUrl(
+    config
+  )}/pullrequests?searchCriteria.status=active&api-version=7.1`;
   const res = await fetch(url, { headers: authHeaders(config.pat) });
   if (!res.ok) {
     throw new Error(`ADO API error ${res.status}: ${res.statusText}`);

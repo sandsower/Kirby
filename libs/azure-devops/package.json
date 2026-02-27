@@ -1,5 +1,5 @@
 {
-  "name": "@workflow-manager/azure-devops",
+  "name": "@kirby/azure-devops",
   "version": "0.0.1",
   "private": true,
   "type": "module",

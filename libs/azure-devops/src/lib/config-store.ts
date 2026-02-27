@@ -1,28 +1,32 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { execSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
-import type { Config, GlobalConfig, ProjectConfig } from "@workflow-manager/shared-types";
-import { DEFAULT_CONFIG, DEFAULT_GLOBAL_CONFIG, DEFAULT_PROJECT_CONFIG } from "@workflow-manager/shared-types";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import type { Config, GlobalConfig, ProjectConfig } from '@kirby/shared-types';
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_GLOBAL_CONFIG,
+  DEFAULT_PROJECT_CONFIG,
+} from '@kirby/shared-types';
 
-const WM_DIR = join(homedir(), ".workflow-manager");
-const GLOBAL_CONFIG_PATH = join(WM_DIR, "config.json");
+const WM_DIR = join(homedir(), '.kirby');
+const GLOBAL_CONFIG_PATH = join(WM_DIR, 'config.json');
 
 /** Hash CWD to a 16-char hex key for per-project config */
 export function projectKey(cwd: string): string {
-  return createHash("sha256").update(cwd).digest("hex").slice(0, 16);
+  return createHash('sha256').update(cwd).digest('hex').slice(0, 16);
 }
 
 /** Path to per-project config file */
 function projectConfigPath(cwd: string): string {
-  return join(WM_DIR, "projects", projectKey(cwd), "config.json");
+  return join(WM_DIR, 'projects', projectKey(cwd), 'config.json');
 }
 
 /** Read JSON file, returning fallback on any error */
 function readJsonFile<T>(path: string, fallback: T): T {
   try {
-    const data = readFileSync(path, "utf8");
+    const data = readFileSync(path, 'utf8');
     return { ...fallback, ...JSON.parse(data) };
   } catch {
     return { ...fallback };
@@ -35,26 +39,29 @@ function writeJsonFile<T>(path: string, data: T): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  writeFileSync(path, JSON.stringify(data, null, 2), "utf8");
+  writeFileSync(path, JSON.stringify(data, null, 2), 'utf8');
 }
 
-/** Read global config (~/.workflow-manager/config.json) */
+/** Read global config (~/.kirby/config.json) */
 export function readGlobalConfig(): GlobalConfig {
   return readJsonFile(GLOBAL_CONFIG_PATH, DEFAULT_GLOBAL_CONFIG);
 }
 
-/** Write global config (~/.workflow-manager/config.json) */
+/** Write global config (~/.kirby/config.json) */
 export function writeGlobalConfig(config: GlobalConfig): void {
   writeJsonFile(GLOBAL_CONFIG_PATH, config);
 }
 
-/** Read per-project config (~/.workflow-manager/projects/<hash>/config.json) */
+/** Read per-project config (~/.kirby/projects/<hash>/config.json) */
 export function readProjectConfig(cwd = process.cwd()): ProjectConfig {
   return readJsonFile(projectConfigPath(cwd), DEFAULT_PROJECT_CONFIG);
 }
 
-/** Write per-project config (~/.workflow-manager/projects/<hash>/config.json) */
-export function writeProjectConfig(config: ProjectConfig, cwd = process.cwd()): void {
+/** Write per-project config (~/.kirby/projects/<hash>/config.json) */
+export function writeProjectConfig(
+  config: ProjectConfig,
+  cwd = process.cwd()
+): void {
   writeJsonFile(projectConfigPath(cwd), config);
 }
 
@@ -89,7 +96,7 @@ export function parseAdoRemoteUrl(
     return {
       org: httpsMatch[1]!,
       project: httpsMatch[2]!,
-      repo: httpsMatch[3]!.replace(/\.git$/, ""),
+      repo: httpsMatch[3]!.replace(/\.git$/, ''),
     };
   }
 
@@ -101,7 +108,7 @@ export function parseAdoRemoteUrl(
     return {
       org: sshMatch[1]!,
       project: sshMatch[2]!,
-      repo: sshMatch[3]!.replace(/\.git$/, ""),
+      repo: sshMatch[3]!.replace(/\.git$/, ''),
     };
   }
 
@@ -124,15 +131,24 @@ export function autoDetectProjectConfig(cwd = process.cwd()): {
   // Auto-detect org/project/repo from git remote
   if (!cfg.org || !cfg.project || !cfg.repo) {
     try {
-      const remoteUrl = execSync("git remote get-url origin", {
-        encoding: "utf8",
-        stdio: "pipe",
+      const remoteUrl = execSync('git remote get-url origin', {
+        encoding: 'utf8',
+        stdio: 'pipe',
       }).trim();
       const parsed = parseAdoRemoteUrl(remoteUrl);
       if (parsed) {
-        if (!cfg.org) { cfg.org = parsed.org; detected.org = parsed.org; }
-        if (!cfg.project) { cfg.project = parsed.project; detected.project = parsed.project; }
-        if (!cfg.repo) { cfg.repo = parsed.repo; detected.repo = parsed.repo; }
+        if (!cfg.org) {
+          cfg.org = parsed.org;
+          detected.org = parsed.org;
+        }
+        if (!cfg.project) {
+          cfg.project = parsed.project;
+          detected.project = parsed.project;
+        }
+        if (!cfg.repo) {
+          cfg.repo = parsed.repo;
+          detected.repo = parsed.repo;
+        }
       }
     } catch {
       // git remote may fail — not critical
@@ -142,9 +158,9 @@ export function autoDetectProjectConfig(cwd = process.cwd()): {
   // Auto-detect email from git config
   if (!cfg.email) {
     try {
-      const email = execSync("git config user.email", {
-        encoding: "utf8",
-        stdio: "pipe",
+      const email = execSync('git config user.email', {
+        encoding: 'utf8',
+        stdio: 'pipe',
       }).trim();
       if (email) {
         cfg.email = email;
