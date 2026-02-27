@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -105,4 +106,59 @@ export function parseAdoRemoteUrl(
   }
 
   return null;
+}
+
+/**
+ * Auto-detect project config fields from the git repo.
+ * Fills empty org/project/repo from `git remote get-url origin` and
+ * empty email from `git config user.email`. Writes back if any field was updated.
+ * Returns what was detected and whether the config was updated.
+ */
+export function autoDetectProjectConfig(cwd = process.cwd()): {
+  updated: boolean;
+  detected: Partial<ProjectConfig>;
+} {
+  const cfg = readProjectConfig(cwd);
+  const detected: Partial<ProjectConfig> = {};
+
+  // Auto-detect org/project/repo from git remote
+  if (!cfg.org || !cfg.project || !cfg.repo) {
+    try {
+      const remoteUrl = execSync("git remote get-url origin", {
+        encoding: "utf8",
+        stdio: "pipe",
+      }).trim();
+      const parsed = parseAdoRemoteUrl(remoteUrl);
+      if (parsed) {
+        if (!cfg.org) { cfg.org = parsed.org; detected.org = parsed.org; }
+        if (!cfg.project) { cfg.project = parsed.project; detected.project = parsed.project; }
+        if (!cfg.repo) { cfg.repo = parsed.repo; detected.repo = parsed.repo; }
+      }
+    } catch {
+      // git remote may fail — not critical
+    }
+  }
+
+  // Auto-detect email from git config
+  if (!cfg.email) {
+    try {
+      const email = execSync("git config user.email", {
+        encoding: "utf8",
+        stdio: "pipe",
+      }).trim();
+      if (email) {
+        cfg.email = email;
+        detected.email = email;
+      }
+    } catch {
+      // git config may fail — not critical
+    }
+  }
+
+  const updated = Object.keys(detected).length > 0;
+  if (updated) {
+    writeProjectConfig(cfg, cwd);
+  }
+
+  return { updated, detected };
 }

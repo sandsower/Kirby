@@ -25,7 +25,7 @@ import {
   readProjectConfig,
   writeProjectConfig,
   isAdoConfigured,
-  parseAdoRemoteUrl,
+  autoDetectProjectConfig,
 } from "@workflow-manager/azure-devops";
 import type { AdoConfig } from "@workflow-manager/azure-devops";
 import type { BranchPrMap, PullRequestInfo, Config } from "@workflow-manager/shared-types";
@@ -575,46 +575,8 @@ function App() {
     setBranches(listBranches());
 
     // Auto-detect per-project fields on first launch
-    const projectCfg = readProjectConfig();
-    let projectUpdated = false;
-
-    // Auto-detect org/project/repo from git remote
-    if (!projectCfg.org || !projectCfg.project || !projectCfg.repo) {
-      try {
-        const remoteUrl = execSync("git remote get-url origin", {
-          encoding: "utf8",
-          stdio: "pipe",
-        }).trim();
-        const parsed = parseAdoRemoteUrl(remoteUrl);
-        if (parsed) {
-          projectCfg.org = projectCfg.org || parsed.org;
-          projectCfg.project = projectCfg.project || parsed.project;
-          projectCfg.repo = projectCfg.repo || parsed.repo;
-          projectUpdated = true;
-        }
-      } catch {
-        // git remote may fail — not critical
-      }
-    }
-
-    // Auto-detect email from git config
-    if (!projectCfg.email) {
-      try {
-        const email = execSync("git config user.email", {
-          encoding: "utf8",
-          stdio: "pipe",
-        }).trim();
-        if (email) {
-          projectCfg.email = email;
-          projectUpdated = true;
-        }
-      } catch {
-        // git config may fail — not critical
-      }
-    }
-
-    if (projectUpdated) {
-      writeProjectConfig(projectCfg);
+    const { updated } = autoDetectProjectConfig();
+    if (updated) {
       setConfig(readConfig());
     }
 
@@ -815,22 +777,13 @@ function App() {
         return;
       }
       if (input === "a") {
-        try {
-          const remoteUrl = execSync("git remote get-url origin", {
-            encoding: "utf8",
-            stdio: "pipe",
-          }).trim();
-          const parsed = parseAdoRemoteUrl(remoteUrl);
-          if (parsed) {
-            const p = readProjectConfig();
-            writeProjectConfig({ ...p, ...parsed });
-            setConfig((prev) => ({ ...prev, ...parsed }));
-            flashStatus("Auto-detected org/project/repo from git remote");
-          } else {
-            flashStatus("Could not parse Azure DevOps URL from git remote");
-          }
-        } catch {
-          flashStatus("Failed to read git remote");
+        const { updated, detected } = autoDetectProjectConfig();
+        if (updated) {
+          setConfig(readConfig());
+          const fields = Object.keys(detected).join(", ");
+          flashStatus(`Auto-detected: ${fields}`);
+        } else {
+          flashStatus("Nothing new to detect (all fields already set)");
         }
         return;
       }
