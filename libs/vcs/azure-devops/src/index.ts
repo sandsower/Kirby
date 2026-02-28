@@ -1,1 +1,1 @@
-export * from './lib/azure-devops.js';
+export { azureDevOpsProvider } from './lib/provider.js';
