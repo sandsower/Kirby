@@ -27,6 +27,17 @@ export async function ghApi(endpoint: string): Promise<unknown> {
   }
 }
 
+// ── Internal types ────────────────────────────────────────────────
+
+interface GitHubProject {
+  owner: string;
+  repo: string;
+}
+
+function toGitHubProject(project: Record<string, string>): GitHubProject {
+  return { owner: project.owner ?? '', repo: project.repo ?? '' };
+}
+
 // ── Internal helpers ───────────────────────────────────────────────
 
 export function parseGitHubRemoteUrl(
@@ -116,10 +127,10 @@ interface GitHubPrRaw {
 }
 
 export async function fetchOpenPrs(
-  project: Record<string, string>
+  gh: GitHubProject
 ): Promise<PullRequestInfo[]> {
   const data = (await ghApi(
-    `repos/${project.owner}/${project.repo}/pulls?state=open&per_page=100`
+    `repos/${gh.owner}/${gh.repo}/pulls?state=open&per_page=100`
   )) as GitHubPrRaw[];
   return data.map((pr) => ({
     id: pr.number,
@@ -134,21 +145,21 @@ export async function fetchOpenPrs(
 }
 
 export async function fetchReviews(
-  project: Record<string, string>,
+  gh: GitHubProject,
   prNumber: number
 ): Promise<PullRequestReviewer[]> {
   const data = (await ghApi(
-    `repos/${project.owner}/${project.repo}/pulls/${prNumber}/reviews`
+    `repos/${gh.owner}/${gh.repo}/pulls/${prNumber}/reviews`
   )) as Array<{ user: { login: string }; state: string }>;
   return latestReviewPerUser(data);
 }
 
 export async function fetchCheckRuns(
-  project: Record<string, string>,
+  gh: GitHubProject,
   ref: string
 ): Promise<BuildStatusState> {
   const data = (await ghApi(
-    `repos/${project.owner}/${project.repo}/commits/${ref}/check-runs?per_page=100`
+    `repos/${gh.owner}/${gh.repo}/commits/${ref}/check-runs?per_page=100`
   )) as { check_runs: Array<{ status: string; conclusion: string | null }> };
   return deriveCheckRunStatus(data.check_runs ?? []);
 }
@@ -180,22 +191,23 @@ export const githubProvider: VcsProvider = {
 
   matchesUser(identifier: string, config: AppConfig): boolean {
     const username = config.vendorProject?.username;
-    if (username) {
-      return identifier.toLowerCase() === username.toLowerCase();
-    }
-    return identifier.toLowerCase() === (config.email ?? '').toLowerCase();
+    if (!username) return false;
+    return identifier.toLowerCase() === username.toLowerCase();
   },
 
   async fetchPullRequests(
     _auth: Record<string, string>,
     project: Record<string, string>
   ): Promise<BranchPrMap> {
-    const prs = await fetchOpenPrs(project);
+    const gh = toGitHubProject(project);
+    const prs = await fetchOpenPrs(gh);
+    // Note: activeCommentCount is not fetched — GitHub has no direct
+    // equivalent to ADO's active thread count. The UI handles undefined.
     const withDetails = await Promise.all(
       prs.map(async (pr) => {
         const [reviewers, buildStatus] = await Promise.all([
-          fetchReviews(project, pr.id),
-          fetchCheckRuns(project, pr.sourceBranch),
+          fetchReviews(gh, pr.id),
+          fetchCheckRuns(gh, pr.sourceBranch),
         ]);
         return { ...pr, reviewers, buildStatus } satisfies PullRequestInfo;
       })

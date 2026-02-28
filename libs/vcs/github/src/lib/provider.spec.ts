@@ -355,19 +355,10 @@ describe('githubProvider', () => {
     ).toBe(true);
   });
 
-  it('matchesUser falls back to email when no username', () => {
-    expect(
-      githubProvider.matchesUser('user@example.com', {
-        email: 'user@example.com',
-        vendorAuth: {},
-        vendorProject: {},
-      })
-    ).toBe(true);
-  });
-
-  it('matchesUser returns false when no username and no email', () => {
+  it('matchesUser returns false when no username configured', () => {
     expect(
       githubProvider.matchesUser('octocat', {
+        email: 'user@example.com',
         vendorAuth: {},
         vendorProject: {},
       })
