@@ -1,5 +1,5 @@
 import { Text, Box } from 'ink';
-import type { PullRequestInfo } from '@kirby/shared-types';
+import type { PullRequestInfo } from '@kirby/vcs-core';
 
 export function ReviewDetailPane({ pr }: { pr: PullRequestInfo | undefined }) {
   if (!pr) {
@@ -14,11 +14,11 @@ export function ReviewDetailPane({ pr }: { pr: PullRequestInfo | undefined }) {
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       <Text bold>{pr.title || pr.sourceBranch}</Text>
       <Text dimColor>
-        #{pr.pullRequestId} · {pr.sourceBranch} → {pr.targetBranch}
+        #{pr.id} · {pr.sourceBranch} → {pr.targetBranch}
       </Text>
       <Text dimColor>
-        by {pr.createdByDisplayName ?? 'unknown'} · {pr.activeCommentCount}{' '}
-        comments · {pr.reviewers.length} reviewers
+        by {pr.createdByDisplayName || 'unknown'} · {pr.activeCommentCount ?? 0}{' '}
+        comments · {(pr.reviewers ?? []).length} reviewers
       </Text>
       <Box marginTop={1}>
         <Text dimColor>(detail view coming soon)</Text>

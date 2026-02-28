@@ -1,11 +1,14 @@
+import { useMemo } from 'react';
 import { Text, Box } from 'ink';
-import type { Config } from '@kirby/shared-types';
+import type { AppConfig, VcsProvider } from '@kirby/vcs-core';
 
 export interface SettingsField {
   label: string;
-  key: keyof Config;
+  key: string;
   masked?: boolean;
   presets?: { name: string; value: string | null }[];
+  /** Which config bag this field lives in */
+  configBag: 'global' | 'project' | 'vendorAuth' | 'vendorProject';
 }
 
 export const AI_PRESETS: { name: string; value: string | null }[] = [
@@ -16,36 +19,82 @@ export const AI_PRESETS: { name: string; value: string | null }[] = [
   { name: 'Custom', value: null },
 ];
 
-export const SETTINGS_FIELDS: SettingsField[] = [
-  { label: 'AI Tool', key: 'aiCommand', presets: AI_PRESETS },
-  { label: 'Organization', key: 'org' },
-  { label: 'Project', key: 'project' },
-  { label: 'Repository', key: 'repo' },
-  { label: 'PAT', key: 'pat', masked: true },
-  { label: 'Email', key: 'email' },
-];
+/** Build the settings field list dynamically from the active provider */
+export function buildSettingsFields(
+  provider: VcsProvider | null
+): SettingsField[] {
+  const fields: SettingsField[] = [
+    {
+      label: 'AI Tool',
+      key: 'aiCommand',
+      presets: AI_PRESETS,
+      configBag: 'global',
+    },
+    { label: 'Email', key: 'email', configBag: 'project' },
+  ];
+
+  if (provider) {
+    for (const f of provider.authFields) {
+      fields.push({
+        label: f.label,
+        key: f.key,
+        masked: f.masked,
+        configBag: 'vendorAuth',
+      });
+    }
+    for (const f of provider.projectFields) {
+      fields.push({
+        label: f.label,
+        key: f.key,
+        configBag: 'vendorProject',
+      });
+    }
+  }
+
+  return fields;
+}
+
+/** Resolve the display value from config for a settings field */
+export function resolveValue(config: AppConfig, field: SettingsField): string {
+  switch (field.configBag) {
+    case 'global':
+    case 'project':
+      return String(
+        (config as unknown as Record<string, unknown>)[field.key] ?? ''
+      );
+    case 'vendorAuth':
+      return String(config.vendorAuth[field.key] ?? '');
+    case 'vendorProject':
+      return String(config.vendorProject[field.key] ?? '');
+  }
+}
 
 export function SettingsPanel({
   config,
+  provider,
   fieldIndex,
   editingField,
   editBuffer,
 }: {
-  config: Config;
+  config: AppConfig;
+  provider: VcsProvider | null;
   fieldIndex: number;
   editingField: string | null;
   editBuffer: string;
 }) {
+  const fields = useMemo(() => buildSettingsFields(provider), [provider]);
+
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
       <Text bold color="magenta">
-        Azure DevOps Settings
+        Settings
+        {provider ? <Text dimColor> ({provider.displayName})</Text> : null}
       </Text>
       <Text dimColor>{'─'.repeat(40)}</Text>
-      {SETTINGS_FIELDS.map((field, i) => {
+      {fields.map((field, i) => {
         const selected = i === fieldIndex;
         const isEditing = editingField === field.key;
-        const rawValue = String(config[field.key] ?? '');
+        const rawValue = resolveValue(config, field);
 
         let displayValue: string;
         if (field.presets) {

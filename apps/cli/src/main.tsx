@@ -13,15 +13,17 @@ import {
 import type { TmuxSession } from '@kirby/tmux-manager';
 import {
   readConfig,
-  isAdoConfigured,
+  isVcsConfigured,
   autoDetectProjectConfig,
-} from '@kirby/azure-devops';
+} from '@kirby/vcs-core';
 import type {
+  AppConfig,
+  VcsProvider,
   PullRequestInfo,
-  Config,
-  ActiveTab,
   CategorizedReviews,
-} from '@kirby/shared-types';
+} from '@kirby/vcs-core';
+import { azureDevOpsProvider } from '@kirby/vcs-azure-devops';
+import type { ActiveTab } from './types.js';
 import { TabBar } from './components/TabBar.js';
 import { Sidebar } from './components/Sidebar.js';
 import { TerminalView } from './components/TerminalView.js';
@@ -41,6 +43,12 @@ import {
 } from './input-handlers.js';
 import type { AppContext, Focus } from './input-handlers.js';
 
+// ── Provider registry ──────────────────────────────────────────────
+
+const providers: VcsProvider[] = [azureDevOpsProvider];
+
+// ── Status bar ─────────────────────────────────────────────────────
+
 function StatusBar({
   confirmDelete,
   confirmInput,
@@ -51,9 +59,13 @@ function StatusBar({
   sessionCount,
   focus,
   hasTmux,
-  adoConfigured,
+  vcsConfigured,
 }: {
-  confirmDelete: { branch: string; sessionName: string; reason: string } | null;
+  confirmDelete: {
+    branch: string;
+    sessionName: string;
+    reason: string;
+  } | null;
   confirmInput: string;
   creating: boolean;
   branchFilter: string;
@@ -62,7 +74,7 @@ function StatusBar({
   sessionCount: number;
   focus: Focus;
   hasTmux: boolean;
-  adoConfigured: boolean;
+  vcsConfigured: boolean;
 }) {
   if (confirmDelete) {
     return (
@@ -97,21 +109,30 @@ function StatusBar({
     <Text dimColor>
       {sessionCount} sessions · focus: <Text color="cyan">{focus}</Text> · tmux:{' '}
       {hasTmux ? '✓' : '✕'}
-      {!adoConfigured ? ' · (s to configure ADO)' : ''}
+      {!vcsConfigured ? ' · (s to configure VCS)' : ''}
     </Text>
   );
 }
+
+// ── App ────────────────────────────────────────────────────────────
 
 function App() {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const termRows = stdout?.rows ?? 24;
   const termCols = stdout?.columns ?? 80;
-  const [config, setConfig] = useState<Config>(() => readConfig());
-  const adoConfigured = isAdoConfigured(config);
-  const sidebarWidth = adoConfigured ? 48 : 24;
+  const [config, setConfig] = useState<AppConfig>(() => readConfig());
+
+  // Resolve the active VCS provider from config
+  const provider = useMemo<VcsProvider | null>(() => {
+    if (!config.vendor) return null;
+    return providers.find((p) => p.id === config.vendor) ?? null;
+  }, [config.vendor]);
+
+  const vcsConfigured = isVcsConfigured(config, provider);
+  const sidebarWidth = vcsConfigured ? 48 : 24;
   const paneCols = Math.max(20, termCols - sidebarWidth - 2);
-  const paneRows = Math.max(5, termRows - 3); // 1 tab bar (includes status) + 1 heading + 1 separator
+  const paneRows = Math.max(5, termRows - 3);
   const [activeTab, setActiveTab] = useState<ActiveTab>('sessions');
   const [focus, setFocus] = useState<Focus>('sidebar');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -146,26 +167,30 @@ function App() {
     selectedOption: number;
   } | null>(null);
   const [reviewInstruction, setReviewInstruction] = useState('');
-  const { prMap, error: prError, refresh: refreshPr } = usePrData(config);
+  const {
+    prMap,
+    error: prError,
+    refresh: refreshPr,
+  } = usePrData(config, provider);
 
   // Orphan PRs: user's PRs that don't have a matching worktree session
   const orphanPrs = useMemo(() => {
-    if (!config.email) return [];
+    if (!config.email || !provider) return [];
     const email = config.email.toLowerCase();
     const sessionNames = new Set(sessions.map((s) => s.name));
     return Object.values(prMap)
       .filter(
         (pr): pr is PullRequestInfo =>
           pr != null &&
-          pr.createdByUniqueName?.toLowerCase() === email &&
+          provider.matchesUser(pr.createdByIdentifier, email) &&
           !sessionNames.has(branchToSessionName(pr.sourceBranch))
       )
-      .sort((a, b) => b.pullRequestId - a.pullRequestId);
-  }, [prMap, sessions, config.email]);
+      .sort((a, b) => b.id - a.id);
+  }, [prMap, sessions, config.email, provider]);
 
   // Categorize PRs where the user is a reviewer
   const categorizedReviews = useMemo((): CategorizedReviews => {
-    if (!config.email)
+    if (!config.email || !provider)
       return { needsReview: [], waitingForAuthor: [], approvedByYou: [] };
     const email = config.email.toLowerCase();
     const needsReview: PullRequestInfo[] = [];
@@ -173,22 +198,22 @@ function App() {
     const approvedByYou: PullRequestInfo[] = [];
 
     for (const pr of Object.values(prMap)) {
-      if (!pr) continue;
-      const reviewer = pr.reviewers.find(
-        (r) => r.uniqueName.toLowerCase() === email
+      if (!pr || !pr.reviewers) continue;
+      const reviewer = pr.reviewers.find((r) =>
+        provider.matchesUser(r.identifier, email)
       );
       if (!reviewer) continue;
-      if (reviewer.hasDeclined) continue;
-      if (reviewer.vote === 5 || reviewer.vote === 10) {
+      if (reviewer.decision === 'declined') continue;
+      if (reviewer.decision === 'approved') {
         approvedByYou.push(pr);
-      } else if (reviewer.vote === -5 || reviewer.vote === -10) {
+      } else if (reviewer.decision === 'changes-requested') {
         waitingForAuthor.push(pr);
       } else {
         needsReview.push(pr);
       }
     }
     return { needsReview, waitingForAuthor, approvedByYou };
-  }, [prMap, config.email]);
+  }, [prMap, config.email, provider]);
 
   const reviewTotalItems =
     categorizedReviews.needsReview.length +
@@ -201,7 +226,7 @@ function App() {
     }
   }, [reviewTotalItems, reviewSelectedIndex]);
 
-  // Sort sessions by associated PR number (newest first), sessions without a PR go last
+  // Sort sessions by associated PR number (newest first)
   const sortedSessions = useMemo(() => {
     return [...sessions].sort((a, b) => {
       const prA = Object.values(prMap).find(
@@ -210,8 +235,8 @@ function App() {
       const prB = Object.values(prMap).find(
         (pr) => pr && branchToSessionName(pr.sourceBranch) === b.name
       );
-      const idA = prA?.pullRequestId ?? -Infinity;
-      const idB = prB?.pullRequestId ?? -Infinity;
+      const idA = prA?.id ?? -Infinity;
+      const idB = prB?.id ?? -Infinity;
       return idB - idA;
     });
   }, [sessions, prMap]);
@@ -234,7 +259,7 @@ function App() {
   );
   const selectedReviewPr = allReviewPrs[reviewSelectedIndex];
   const reviewSessionName = selectedReviewPr
-    ? `review-pr-${selectedReviewPr.pullRequestId}`
+    ? `review-pr-${selectedReviewPr.id}`
     : null;
 
   useEffect(() => {
@@ -253,7 +278,7 @@ function App() {
     setBranches(listAllBranches());
 
     // Auto-detect per-project fields on first launch
-    const { updated } = autoDetectProjectConfig();
+    const { updated } = autoDetectProjectConfig(process.cwd(), providers);
     if (updated) {
       setConfig(readConfig());
     }
@@ -264,7 +289,6 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh sessions by cross-referencing worktrees with live tmux sessions
   const refreshSessions = () => {
     const worktrees = listWorktrees();
     const allTmux = listSessions();
@@ -289,14 +313,13 @@ function App() {
     statusTimer.current = setTimeout(() => setStatusMessage(null), 3000);
   };
 
-  // Perform the actual session + worktree + branch deletion
   const performDelete = (sessionName: string, branch: string) => {
     killSession(sessionName);
     removeWorktree(branch);
     try {
       execSync(`git branch -d "${branch}"`, { stdio: 'pipe' });
     } catch {
-      // Branch delete may fail if not fully merged — that's ok, worktree is gone
+      // Branch delete may fail if not fully merged
     }
     const updated = refreshSessions();
     setSelectedIndex((prev) =>
@@ -322,6 +345,8 @@ function App() {
 
   const ctx: AppContext = {
     config,
+    provider,
+    providers,
     branches,
     branchFilter,
     branchIndex,
@@ -403,7 +428,7 @@ function App() {
             sessionCount={sortedSessions.length}
             focus={focus}
             hasTmux={hasTmux}
-            adoConfigured={adoConfigured}
+            vcsConfigured={vcsConfigured}
           />
         </Box>
         <Text dimColor>{process.cwd()}</Text>
@@ -416,18 +441,14 @@ function App() {
               selectedIndex={selectedIndex}
               focused={focus === 'sidebar' && !creating && !settingsOpen}
               prMap={prMap}
-              adoConfigured={adoConfigured}
+              vcsConfigured={vcsConfigured}
               sidebarWidth={sidebarWidth}
               orphanPrs={orphanPrs}
-              prBaseUrl={
-                config.org && config.project && config.repo
-                  ? `https://dev.azure.com/${config.org}/${config.project}/_git/${config.repo}`
-                  : undefined
-              }
             />
             {settingsOpen && (
               <SettingsPanel
                 config={config}
+                provider={provider}
                 fieldIndex={settingsFieldIndex}
                 editingField={editingField}
                 editBuffer={editBuffer}
@@ -453,7 +474,7 @@ function App() {
           <>
             <ReviewsSidebar
               categorized={categorizedReviews}
-              selectedPrId={selectedReviewPr?.pullRequestId}
+              selectedPrId={selectedReviewPr?.id}
               sidebarWidth={sidebarWidth}
               focused={focus === 'sidebar' && !reviewConfirm}
             />
@@ -469,7 +490,7 @@ function App() {
               }
               if (
                 selectedReviewPr &&
-                reviewSessionStarted.has(selectedReviewPr.pullRequestId)
+                reviewSessionStarted.has(selectedReviewPr.id)
               ) {
                 return (
                   <TerminalView

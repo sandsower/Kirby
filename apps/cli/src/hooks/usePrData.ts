@@ -1,27 +1,22 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  fetchPullRequestsWithComments,
-  isAdoConfigured,
-} from '@kirby/azure-devops';
-import type { AdoConfig } from '@kirby/azure-devops';
-import type { BranchPrMap, Config } from '@kirby/shared-types';
+import type { AppConfig, VcsProvider, BranchPrMap } from '@kirby/vcs-core';
+import { isVcsConfigured } from '@kirby/vcs-core';
 
-export function usePrData(config: Config, refreshInterval = 60000) {
+export function usePrData(
+  config: AppConfig,
+  provider: VcsProvider | null,
+  refreshInterval = 60000
+) {
   const [prMap, setPrMap] = useState<BranchPrMap>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   const refresh = useCallback(() => {
-    if (!isAdoConfigured(config)) return;
-    const adoConfig: AdoConfig = {
-      org: config.org!,
-      project: config.project!,
-      repo: config.repo!,
-      pat: config.pat!,
-    };
+    if (!provider || !isVcsConfigured(config, provider)) return;
     setLoading(true);
-    fetchPullRequestsWithComments(adoConfig)
+    provider
+      .fetchPullRequests(config.vendorAuth, config.vendorProject)
       .then((map) => {
         if (mountedRef.current) {
           setPrMap(map);
@@ -36,11 +31,11 @@ export function usePrData(config: Config, refreshInterval = 60000) {
       .finally(() => {
         if (mountedRef.current) setLoading(false);
       });
-  }, [config]);
+  }, [config, provider]);
 
   useEffect(() => {
     mountedRef.current = true;
-    if (!isAdoConfigured(config)) return;
+    if (!provider || !isVcsConfigured(config, provider)) return;
     refresh();
     const interval = setInterval(
       refresh,
@@ -50,7 +45,7 @@ export function usePrData(config: Config, refreshInterval = 60000) {
       mountedRef.current = false;
       clearInterval(interval);
     };
-  }, [config, refresh, refreshInterval]);
+  }, [config, provider, refresh, refreshInterval]);
 
   return { prMap, loading, error, refresh };
 }

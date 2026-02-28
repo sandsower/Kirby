@@ -115,7 +115,7 @@ export function readConfig(cwd = process.cwd()): AppConfig {
   const project = readProjectConfig(cwd);
 
   const vendor = project.vendor;
-  const vendorAuth = (vendor && global.vendorAuth?.[vendor]) ?? {};
+  const vendorAuth = (vendor ? global.vendorAuth?.[vendor] : undefined) ?? {};
   const vendorProject = project.vendorProject ?? {};
 
   return {

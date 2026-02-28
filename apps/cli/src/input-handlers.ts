@@ -21,33 +21,75 @@ import {
   readProjectConfig,
   writeProjectConfig,
   autoDetectProjectConfig,
-} from '@kirby/azure-devops';
-import type {
-  Config,
-  ProjectConfig,
-  GlobalConfig,
-  PullRequestInfo,
-  ActiveTab,
-} from '@kirby/shared-types';
-import { SETTINGS_FIELDS } from './components/SettingsPanel.js';
+} from '@kirby/vcs-core';
+import type { AppConfig, VcsProvider, PullRequestInfo } from '@kirby/vcs-core';
+import type { ActiveTab } from './types.js';
+import {
+  buildSettingsFields,
+  resolveValue,
+  type SettingsField,
+} from './components/SettingsPanel.js';
 
-const GLOBAL_CONFIG_KEYS = new Set<keyof Config>([
-  'pat',
-  'prPollInterval',
-  'aiCommand',
-]);
-
-/** Persist a single config field to the correct config file (global or project) */
-function persistConfigField(
-  key: keyof Config,
+/** Update a config field in memory, returning a new AppConfig */
+function updateConfigField(
+  config: AppConfig,
+  field: SettingsField,
   value: string | undefined
+): AppConfig {
+  switch (field.configBag) {
+    case 'global':
+    case 'project':
+      return { ...config, [field.key]: value } as AppConfig;
+    case 'vendorAuth':
+      return {
+        ...config,
+        vendorAuth: { ...config.vendorAuth, [field.key]: value ?? '' },
+      };
+    case 'vendorProject':
+      return {
+        ...config,
+        vendorProject: { ...config.vendorProject, [field.key]: value ?? '' },
+      };
+  }
+}
+
+/** Persist a single settings field to the correct config file */
+function persistConfigField(
+  field: SettingsField,
+  value: string | undefined,
+  config: AppConfig
 ): void {
-  if (GLOBAL_CONFIG_KEYS.has(key)) {
-    const g = readGlobalConfig();
-    writeGlobalConfig({ ...g, [key]: value } as GlobalConfig);
-  } else {
-    const p = readProjectConfig();
-    writeProjectConfig({ ...p, [key]: value } as ProjectConfig);
+  switch (field.configBag) {
+    case 'global': {
+      const g = readGlobalConfig();
+      (g as Record<string, unknown>)[field.key] = value;
+      writeGlobalConfig(g);
+      break;
+    }
+    case 'project': {
+      const p = readProjectConfig();
+      (p as Record<string, unknown>)[field.key] = value;
+      writeProjectConfig(p);
+      break;
+    }
+    case 'vendorAuth': {
+      const g = readGlobalConfig();
+      const vendor = config.vendor;
+      if (vendor) {
+        if (!g.vendorAuth) g.vendorAuth = {};
+        if (!g.vendorAuth[vendor]) g.vendorAuth[vendor] = {};
+        g.vendorAuth[vendor]![field.key] = value ?? '';
+        writeGlobalConfig(g);
+      }
+      break;
+    }
+    case 'vendorProject': {
+      const p = readProjectConfig();
+      if (!p.vendorProject) p.vendorProject = {};
+      p.vendorProject[field.key] = value ?? '';
+      writeProjectConfig(p);
+      break;
+    }
   }
 }
 
@@ -55,13 +97,19 @@ export type Focus = 'sidebar' | 'terminal';
 
 export interface AppContext {
   // State
-  config: Config;
+  config: AppConfig;
+  provider: VcsProvider | null;
+  providers: VcsProvider[];
   branches: string[];
   branchFilter: string;
   branchIndex: number;
   paneCols: number;
   paneRows: number;
-  confirmDelete: { branch: string; sessionName: string; reason: string } | null;
+  confirmDelete: {
+    branch: string;
+    sessionName: string;
+    reason: string;
+  } | null;
   confirmInput: string;
   editingField: string | null;
   settingsFieldIndex: number;
@@ -113,7 +161,7 @@ export interface AppContext {
   setEditBuffer: (v: string | ((prev: string) => string)) => void;
   setActiveTab: (v: ActiveTab) => void;
   setReviewSelectedIndex: (v: number | ((prev: number) => number)) => void;
-  setConfig: (v: Config | ((prev: Config) => Config)) => void;
+  setConfig: (v: AppConfig | ((prev: AppConfig) => AppConfig)) => void;
   setFocus: (v: Focus | ((prev: Focus) => Focus)) => void;
   setReconnectKey: (v: (prev: number) => number) => void;
   setBranches: (v: string[]) => void;
@@ -132,7 +180,7 @@ function startAiSession(
   cols: number,
   rows: number,
   cwd: string,
-  config: Config
+  config: AppConfig
 ) {
   const cmd = config.aiCommand || DEFAULT_AI_COMMAND;
   createSession(name, cols, rows, cmd, cwd);
@@ -144,16 +192,12 @@ function startReviewSession(
 ): void {
   if (!ctx.reviewSessionName || !ctx.selectedReviewPr) return;
   const pr = ctx.selectedReviewPr;
-  const org = ctx.config.org ?? '';
-  const project = ctx.config.project ?? '';
-  const repo = ctx.config.repo ?? '';
 
   let prompt =
-    `You are reviewing Azure DevOps Pull Request #${pr.pullRequestId} ` +
-    `titled ${pr.title || pr.sourceBranch} ` +
-    `in the ${org}/${project}/${repo} repository. ` +
+    `You are reviewing Pull Request #${pr.id} ` +
+    `titled ${pr.title || pr.sourceBranch}. ` +
     `The PR merges ${pr.sourceBranch} into ${pr.targetBranch}, ` +
-    `authored by ${pr.createdByDisplayName ?? 'unknown'}. ` +
+    `authored by ${pr.createdByDisplayName || 'unknown'}. ` +
     `Review the pull request thoroughly. For each issue you find: ` +
     `1) Show the file path and line numbers, ` +
     `2) Include a relevant code snippet, ` +
@@ -167,14 +211,12 @@ function startReviewSession(
       additionalInstruction;
   }
 
-  // Checkout the PR's source branch so Claude can see the code
   const worktreePath = createWorktree(pr.sourceBranch);
   if (!worktreePath) {
     ctx.flashStatus(`Failed to create worktree for ${pr.sourceBranch}`);
     return;
   }
 
-  // Strip quotes for shell safety — createSession wraps the command in double quotes
   const safePrompt = prompt.replace(/['"]/g, '');
   const command = `claude --continue || claude '${safePrompt}'`;
 
@@ -185,10 +227,10 @@ function startReviewSession(
     command,
     worktreePath
   );
-  ctx.setReviewSessionStarted((prev) => new Set([...prev, pr.pullRequestId]));
+  ctx.setReviewSessionStarted((prev) => new Set([...prev, pr.id]));
 }
 
-const REVIEW_CONFIRM_OPTIONS = 3; // 0: Start, 1: Instructions, 2: Cancel
+const REVIEW_CONFIRM_OPTIONS = 3;
 
 export function handleReviewConfirmInput(
   input: string,
@@ -204,10 +246,8 @@ export function handleReviewConfirmInput(
     return;
   }
 
-  // Option 1 (instructions) captures text input when selected
   if (opt === 1) {
     if (key.return) {
-      // Enter on the instruction field starts the review with the instruction
       if (!hasSession(ctx.reviewSessionName!)) {
         startReviewSession(ctx, ctx.reviewInstruction || undefined);
       }
@@ -221,7 +261,6 @@ export function handleReviewConfirmInput(
       ctx.setReviewInstruction((v) => v.slice(0, -1));
       return;
     }
-    // Arrow keys navigate away from the text field
     if (key.upArrow || (input === 'k' && key.ctrl)) {
       ctx.setReviewConfirm({ ...confirm, selectedOption: 0 });
       return;
@@ -230,14 +269,12 @@ export function handleReviewConfirmInput(
       ctx.setReviewConfirm({ ...confirm, selectedOption: 2 });
       return;
     }
-    // All other input goes into the text field
     if (input && !key.ctrl && !key.meta) {
       ctx.setReviewInstruction((v) => v + input);
     }
     return;
   }
 
-  // Options 0 and 2: navigate with arrows/j/k, Enter to select
   if (input === 'j' || key.downArrow) {
     ctx.setReviewConfirm({
       ...confirm,
@@ -375,6 +412,8 @@ export function handleSettingsInput(
   key: Key,
   ctx: AppContext
 ): void {
+  const fields = buildSettingsFields(ctx.provider);
+
   if (ctx.editingField) {
     if (key.escape) {
       ctx.setEditingField(null);
@@ -382,10 +421,13 @@ export function handleSettingsInput(
       return;
     }
     if (key.return) {
-      const field = SETTINGS_FIELDS[ctx.settingsFieldIndex]!;
+      const field = fields[ctx.settingsFieldIndex]!;
       const value = ctx.editBuffer || undefined;
-      ctx.setConfig({ ...ctx.config, [field.key]: value });
-      persistConfigField(field.key, value);
+
+      // Update in-memory config
+      const updated = updateConfigField(ctx.config, field, value);
+      ctx.setConfig(updated);
+      persistConfigField(field, value, updated);
 
       ctx.setEditingField(null);
       ctx.setEditBuffer('');
@@ -406,9 +448,7 @@ export function handleSettingsInput(
     return;
   }
   if (input === 'j' || key.downArrow) {
-    ctx.setSettingsFieldIndex((i) =>
-      Math.min(i + 1, SETTINGS_FIELDS.length - 1)
-    );
+    ctx.setSettingsFieldIndex((i) => Math.min(i + 1, fields.length - 1));
     return;
   }
   if (input === 'k' || key.upArrow) {
@@ -416,10 +456,10 @@ export function handleSettingsInput(
     return;
   }
   if (key.leftArrow || key.rightArrow) {
-    const field = SETTINGS_FIELDS[ctx.settingsFieldIndex]!;
+    const field = fields[ctx.settingsFieldIndex]!;
     if (field.presets) {
       const namedPresets = field.presets.filter((p) => p.value !== null);
-      const currentValue = ctx.config[field.key] as string | undefined;
+      const currentValue = resolveValue(ctx.config, field) || undefined;
       const effectiveValue = currentValue || namedPresets[0]!.value;
       let idx = namedPresets.findIndex((p) => p.value === effectiveValue);
       if (idx === -1) idx = 0;
@@ -429,19 +469,23 @@ export function handleSettingsInput(
         idx = (idx - 1 + namedPresets.length) % namedPresets.length;
       }
       const preset = namedPresets[idx]!;
-      ctx.setConfig({ ...ctx.config, [field.key]: preset.value });
-      persistConfigField(field.key, preset.value ?? undefined);
+      const updated = { ...ctx.config, [field.key]: preset.value };
+      ctx.setConfig(updated);
+      persistConfigField(field, preset.value ?? undefined, updated);
     }
     return;
   }
   if (key.return) {
-    const field = SETTINGS_FIELDS[ctx.settingsFieldIndex]!;
+    const field = fields[ctx.settingsFieldIndex]!;
     ctx.setEditingField(field.key);
-    ctx.setEditBuffer(String(ctx.config[field.key] ?? ''));
+    ctx.setEditBuffer(resolveValue(ctx.config, field));
     return;
   }
   if (input === 'a') {
-    const { updated, detected } = autoDetectProjectConfig();
+    const { updated, detected } = autoDetectProjectConfig(
+      process.cwd(),
+      ctx.providers
+    );
     if (updated) {
       ctx.setConfig(readConfig());
       const fields = Object.keys(detected).join(', ');
@@ -585,13 +629,11 @@ export function handleReviewsSidebarInput(
     return;
   }
   if (key.return && ctx.reviewSessionName && ctx.selectedReviewPr) {
-    // If session already running, just connect
     if (hasSession(ctx.reviewSessionName)) {
       ctx.setFocus('terminal');
       ctx.setReviewReconnectKey((k) => k + 1);
       return;
     }
-    // Show confirmation in right pane
     ctx.setReviewConfirm({ pr: ctx.selectedReviewPr, selectedOption: 0 });
     return;
   }
@@ -655,11 +697,9 @@ export function handleGlobalInput(
       ctx.selectedReviewPr
     ) {
       if (hasSession(ctx.reviewSessionName)) {
-        // Session exists — connect and focus terminal
         ctx.setReviewReconnectKey((k) => k + 1);
         ctx.setFocus('terminal');
       } else {
-        // No session yet — show confirmation
         ctx.setReviewConfirm({ pr: ctx.selectedReviewPr, selectedOption: 0 });
       }
     } else if (ctx.focus === 'terminal') {

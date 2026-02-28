@@ -1,29 +1,27 @@
 import { Text, Box } from 'ink';
-import type { PullRequestInfo } from '@kirby/shared-types';
+import type { PullRequestInfo } from '@kirby/vcs-core';
 
 export function PrBadge({
   pr,
-  url,
   sidebarWidth,
 }: {
   pr: PullRequestInfo | null | undefined;
-  url?: string;
   sidebarWidth: number;
 }) {
   if (pr == null) {
     return <Text dimColor>{'  (no PR)'}</Text>;
   }
 
-  const approvedCount = pr.reviewers.filter((r) => r.vote >= 5).length;
-  const totalReviewers = pr.reviewers.length;
-  const hasRejected = pr.reviewers.some((r) => r.vote === -10);
-  const hasWaiting = pr.reviewers.some((r) => r.vote === -5);
+  const reviewers = pr.reviewers ?? [];
+  const approvedCount = reviewers.filter(
+    (r) => r.decision === 'approved'
+  ).length;
+  const totalReviewers = reviewers.length;
+  const hasRejected = reviewers.some((r) => r.decision === 'changes-requested');
 
   let reviewColor: string;
   if (hasRejected) {
     reviewColor = 'red';
-  } else if (hasWaiting) {
-    reviewColor = 'yellow';
   } else if (totalReviewers > 0 && approvedCount === totalReviewers) {
     reviewColor = 'green';
   } else {
@@ -33,7 +31,8 @@ export function PrBadge({
   const reviewText =
     totalReviewers > 0 ? `${approvedCount}/${totalReviewers} approved` : '';
 
-  const needsAttention = pr.activeCommentCount > 0 || hasWaiting;
+  const activeComments = pr.activeCommentCount ?? 0;
+  const needsAttention = activeComments > 0 || hasRejected;
 
   let statusEmoji = '';
   if (reviewColor === 'green' && !needsAttention) {
@@ -43,16 +42,18 @@ export function PrBadge({
   }
 
   let buildEmoji = '';
-  switch (pr.buildStatus) {
-    case 'failed':
-      buildEmoji = '🔥';
-      break;
-    case 'succeeded':
-      buildEmoji = '✅';
-      break;
-    case 'pending':
-      buildEmoji = '⏳';
-      break;
+  if (pr.buildStatus) {
+    switch (pr.buildStatus) {
+      case 'failed':
+        buildEmoji = '🔥';
+        break;
+      case 'succeeded':
+        buildEmoji = '✅';
+        break;
+      case 'pending':
+        buildEmoji = '⏳';
+        break;
+    }
   }
 
   const innerWidth = Math.max(10, sidebarWidth - 2);
@@ -62,16 +63,14 @@ export function PrBadge({
       <Text>
         <Text dimColor>{'  '}</Text>
         <Text color="blue">
-          {url
-            ? `\x1b]8;;${url}\x07#${pr.pullRequestId}\x1b]8;;\x07`
-            : `#${pr.pullRequestId}`}
+          {pr.url ? `\x1b]8;;${pr.url}\x07#${pr.id}\x1b]8;;\x07` : `#${pr.id}`}
         </Text>
         {reviewText ? (
           <Text color={reviewColor}>{`  ${reviewText}`}</Text>
         ) : null}
-        {pr.activeCommentCount > 0 ? (
-          <Text color="yellow">{`  ${pr.activeCommentCount} comment${
-            pr.activeCommentCount !== 1 ? 's' : ''
+        {activeComments > 0 ? (
+          <Text color="yellow">{`  ${activeComments} comment${
+            activeComments !== 1 ? 's' : ''
           }`}</Text>
         ) : null}
       </Text>

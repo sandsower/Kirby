@@ -1,15 +1,11 @@
 import { Text, Box } from 'ink';
 import { branchToSessionName } from '@kirby/tmux-manager';
 import type { TmuxSession } from '@kirby/tmux-manager';
-import type { BranchPrMap, PullRequestInfo } from '@kirby/shared-types';
+import type { BranchPrMap, PullRequestInfo } from '@kirby/vcs-core';
 import { PrBadge } from './PrBadge.js';
 
 function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 3) + '...' : text;
-}
-
-function prUrl(baseUrl: string | undefined, prId: number): string | undefined {
-  return baseUrl ? `${baseUrl}/pullrequest/${prId}` : undefined;
 }
 
 function OrphanPrSection({
@@ -19,7 +15,6 @@ function OrphanPrSection({
   selectedIndex,
   focused,
   innerWidth,
-  prBaseUrl,
   sidebarWidth,
 }: {
   title: string;
@@ -28,7 +23,6 @@ function OrphanPrSection({
   selectedIndex: number;
   focused: boolean;
   innerWidth: number;
-  prBaseUrl?: string;
   sidebarWidth: number;
 }) {
   if (prs.length === 0) return null;
@@ -43,18 +37,14 @@ function OrphanPrSection({
       {prs.map((pr, i) => {
         const selected = startIndex + i === selectedIndex;
         return (
-          <Box key={pr.pullRequestId} flexDirection="column">
+          <Box key={pr.id} flexDirection="column">
             <Text>
               <Text color={selected ? 'cyan' : undefined}>
                 {selected ? '› ' : '  '}
               </Text>
               <Text bold={selected}>{truncate(pr.sourceBranch, 42)}</Text>
             </Text>
-            <PrBadge
-              pr={pr}
-              url={prUrl(prBaseUrl, pr.pullRequestId)}
-              sidebarWidth={sidebarWidth}
-            />
+            <PrBadge pr={pr} sidebarWidth={sidebarWidth} />
           </Box>
         );
       })}
@@ -67,23 +57,21 @@ export function Sidebar({
   selectedIndex,
   focused,
   prMap,
-  adoConfigured,
+  vcsConfigured,
   sidebarWidth,
   orphanPrs,
-  prBaseUrl,
 }: {
   sessions: TmuxSession[];
   selectedIndex: number;
   focused: boolean;
   prMap: BranchPrMap;
-  adoConfigured: boolean;
+  vcsConfigured: boolean;
   sidebarWidth: number;
   orphanPrs: PullRequestInfo[];
-  prBaseUrl?: string;
 }) {
   const innerWidth = Math.max(10, sidebarWidth - 2);
-  const activeOrphanPrs = orphanPrs.filter((pr) => !pr.isDraft);
-  const draftOrphanPrs = orphanPrs.filter((pr) => pr.isDraft);
+  const activeOrphanPrs = orphanPrs.filter((pr) => pr.isDraft !== true);
+  const draftOrphanPrs = orphanPrs.filter((pr) => pr.isDraft === true);
 
   return (
     <Box flexDirection="column" width={sidebarWidth} paddingX={1}>
@@ -111,12 +99,8 @@ export function Sidebar({
                 <Text color={color}>{icon} </Text>
                 <Text bold={selected}>{truncate(s.name, 42)}</Text>
               </Text>
-              {adoConfigured ? (
-                <PrBadge
-                  pr={pr}
-                  url={pr ? prUrl(prBaseUrl, pr.pullRequestId) : undefined}
-                  sidebarWidth={sidebarWidth}
-                />
+              {vcsConfigured ? (
+                <PrBadge pr={pr} sidebarWidth={sidebarWidth} />
               ) : null}
             </Box>
           );
@@ -129,7 +113,6 @@ export function Sidebar({
         selectedIndex={selectedIndex}
         focused={focused}
         innerWidth={innerWidth}
-        prBaseUrl={prBaseUrl}
         sidebarWidth={sidebarWidth}
       />
       <OrphanPrSection
@@ -139,7 +122,6 @@ export function Sidebar({
         selectedIndex={selectedIndex}
         focused={focused}
         innerWidth={innerWidth}
-        prBaseUrl={prBaseUrl}
         sidebarWidth={sidebarWidth}
       />
       <Box marginTop={1} flexDirection="column">

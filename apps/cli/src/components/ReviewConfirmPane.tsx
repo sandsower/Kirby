@@ -1,5 +1,5 @@
 import { Text, Box } from 'ink';
-import type { PullRequestInfo } from '@kirby/shared-types';
+import type { PullRequestInfo } from '@kirby/vcs-core';
 
 function Option({ label, selected }: { label: string; selected: boolean }) {
   return (
@@ -23,11 +23,11 @@ export function ReviewConfirmPane({
 }) {
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>
-      <Text bold>Review PR #{pr.pullRequestId}</Text>
+      <Text bold>Review PR #{pr.id}</Text>
       <Text bold>{pr.title || pr.sourceBranch}</Text>
       <Text dimColor>
         {pr.sourceBranch} → {pr.targetBranch} · by{' '}
-        {pr.createdByDisplayName ?? 'unknown'}
+        {pr.createdByDisplayName || 'unknown'}
       </Text>
 
       <Box marginTop={1} flexDirection="column">

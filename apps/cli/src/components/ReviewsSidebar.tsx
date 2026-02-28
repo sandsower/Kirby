@@ -1,11 +1,11 @@
 import { Text, Box } from 'ink';
-import type { CategorizedReviews, PullRequestInfo } from '@kirby/shared-types';
+import type { CategorizedReviews, PullRequestInfo } from '@kirby/vcs-core';
 
 function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 3) + '...' : text;
 }
 
-function buildEmoji(status: string): string {
+function buildEmoji(status: string | undefined): string {
   switch (status) {
     case 'failed':
       return ' \uD83D\uDD25';
@@ -41,9 +41,9 @@ function ReviewSection({
       </Box>
       <Text dimColor>{'─'.repeat(innerWidth)}</Text>
       {prs.map((pr) => {
-        const selected = pr.pullRequestId === selectedPrId;
+        const selected = pr.id === selectedPrId;
         return (
-          <Box key={pr.pullRequestId} flexDirection="column">
+          <Box key={pr.id} flexDirection="column">
             <Text>
               <Text color={selected ? 'cyan' : undefined}>
                 {selected ? '› ' : '  '}
@@ -54,12 +54,13 @@ function ReviewSection({
               </Text>
             </Text>
             <Text dimColor>
-              {'    '}#{pr.pullRequestId} · {truncate(pr.sourceBranch, 20)} →{' '}
+              {'    '}#{pr.id} · {truncate(pr.sourceBranch, 20)} →{' '}
               {pr.targetBranch}
             </Text>
             <Text dimColor>
-              {'    '}by {pr.createdByDisplayName ?? 'unknown'} ·{' '}
-              {pr.activeCommentCount} comments · {pr.reviewers.length} reviewers
+              {'    '}by {pr.createdByDisplayName || 'unknown'} ·{' '}
+              {pr.activeCommentCount ?? 0} comments ·{' '}
+              {(pr.reviewers ?? []).length} reviewers
             </Text>
           </Box>
         );
