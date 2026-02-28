@@ -176,23 +176,21 @@ function App() {
   // Orphan PRs: user's PRs that don't have a matching worktree session
   const orphanPrs = useMemo(() => {
     if (!config.email || !provider) return [];
-    const email = config.email.toLowerCase();
     const sessionNames = new Set(sessions.map((s) => s.name));
     return Object.values(prMap)
       .filter(
         (pr): pr is PullRequestInfo =>
           pr != null &&
-          provider.matchesUser(pr.createdByIdentifier, email) &&
+          provider.matchesUser(pr.createdByIdentifier, config) &&
           !sessionNames.has(branchToSessionName(pr.sourceBranch))
       )
       .sort((a, b) => b.id - a.id);
-  }, [prMap, sessions, config.email, provider]);
+  }, [prMap, sessions, config, provider]);
 
   // Categorize PRs where the user is a reviewer
   const categorizedReviews = useMemo((): CategorizedReviews => {
     if (!config.email || !provider)
       return { needsReview: [], waitingForAuthor: [], approvedByYou: [] };
-    const email = config.email.toLowerCase();
     const needsReview: PullRequestInfo[] = [];
     const waitingForAuthor: PullRequestInfo[] = [];
     const approvedByYou: PullRequestInfo[] = [];
@@ -200,7 +198,7 @@ function App() {
     for (const pr of Object.values(prMap)) {
       if (!pr || !pr.reviewers) continue;
       const reviewer = pr.reviewers.find((r) =>
-        provider.matchesUser(r.identifier, email)
+        provider.matchesUser(r.identifier, config)
       );
       if (!reviewer) continue;
       if (reviewer.decision === 'declined') continue;
@@ -213,7 +211,7 @@ function App() {
       }
     }
     return { needsReview, waitingForAuthor, approvedByYou };
-  }, [prMap, config.email, provider]);
+  }, [prMap, config, provider]);
 
   const reviewTotalItems =
     categorizedReviews.needsReview.length +

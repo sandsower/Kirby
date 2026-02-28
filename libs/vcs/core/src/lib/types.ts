@@ -54,8 +54,8 @@ export interface VcsProvider {
     project: Record<string, string>
   ): boolean;
 
-  /** Does identifier (from PR data) match this user's email? */
-  matchesUser(identifier: string, userEmail: string): boolean;
+  /** Does identifier (from PR data) match the current user? */
+  matchesUser(identifier: string, config: AppConfig): boolean;
 
   /** Fetch all active PRs, keyed by source branch */
   fetchPullRequests(

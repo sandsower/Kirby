@@ -417,8 +417,21 @@ describe('azureDevOpsProvider', () => {
 
   it('matchesUser is case-insensitive', () => {
     expect(
-      azureDevOpsProvider.matchesUser('Alice@Example.com', 'alice@example.com')
+      azureDevOpsProvider.matchesUser('Alice@Example.com', {
+        email: 'alice@example.com',
+        vendorAuth: {},
+        vendorProject: {},
+      })
     ).toBe(true);
+  });
+
+  it('matchesUser returns false when email is missing', () => {
+    expect(
+      azureDevOpsProvider.matchesUser('alice@example.com', {
+        vendorAuth: {},
+        vendorProject: {},
+      })
+    ).toBe(false);
   });
 
   it('parseRemoteUrl delegates to parseAdoRemoteUrl', () => {

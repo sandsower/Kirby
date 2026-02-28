@@ -1,5 +1,6 @@
 import type {
   VcsProvider,
+  AppConfig,
   BranchPrMap,
   PullRequestInfo,
   PullRequestReviewer,
@@ -259,8 +260,8 @@ export const azureDevOpsProvider: VcsProvider = {
     return !!(auth.pat && project.org && project.project && project.repo);
   },
 
-  matchesUser(identifier: string, userEmail: string): boolean {
-    return identifier.toLowerCase() === userEmail.toLowerCase();
+  matchesUser(identifier: string, config: AppConfig): boolean {
+    return identifier.toLowerCase() === (config.email ?? '').toLowerCase();
   },
 
   async fetchPullRequests(
