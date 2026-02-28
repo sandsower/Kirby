@@ -262,13 +262,20 @@ describe('ghGraphQL', () => {
 describe('fetchUnresolvedThreadCount', () => {
   beforeEach(() => mockExecFile.mockReset());
 
-  it('returns unresolved thread count (total minus resolved)', async () => {
+  it('counts unresolved threads from nodes', async () => {
     ghSuccess({
       data: {
         repository: {
           pullRequest: {
-            reviewThreads: { totalCount: 5 },
-            resolvedThreads: { totalCount: 2 },
+            reviewThreads: {
+              nodes: [
+                { isResolved: false },
+                { isResolved: true },
+                { isResolved: false },
+                { isResolved: true },
+                { isResolved: false },
+              ],
+            },
           },
         },
       },
@@ -285,8 +292,22 @@ describe('fetchUnresolvedThreadCount', () => {
       data: {
         repository: {
           pullRequest: {
-            reviewThreads: { totalCount: 4 },
-            resolvedThreads: { totalCount: 4 },
+            reviewThreads: {
+              nodes: [{ isResolved: true }, { isResolved: true }],
+            },
+          },
+        },
+      },
+    });
+    expect(await fetchUnresolvedThreadCount(testProject, 1)).toBe(0);
+  });
+
+  it('returns 0 when no threads exist', async () => {
+    ghSuccess({
+      data: {
+        repository: {
+          pullRequest: {
+            reviewThreads: { nodes: [] },
           },
         },
       },
@@ -484,8 +505,15 @@ describe('githubProvider', () => {
         data: {
           repository: {
             pullRequest: {
-              reviewThreads: { totalCount: 5 },
-              resolvedThreads: { totalCount: 3 },
+              reviewThreads: {
+                nodes: [
+                  { isResolved: false },
+                  { isResolved: true },
+                  { isResolved: true },
+                  { isResolved: true },
+                  { isResolved: false },
+                ],
+              },
             },
           },
         },
@@ -499,8 +527,7 @@ describe('githubProvider', () => {
         data: {
           repository: {
             pullRequest: {
-              reviewThreads: { totalCount: 0 },
-              resolvedThreads: { totalCount: 0 },
+              reviewThreads: { nodes: [] },
             },
           },
         },

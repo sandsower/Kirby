@@ -187,11 +187,8 @@ const UNRESOLVED_THREADS_QUERY = `
   query($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
-        reviewThreads(first: 0) {
-          totalCount
-        }
-        resolvedThreads: reviewThreads(first: 0, filterBy: {resolved: true}) {
-          totalCount
+        reviewThreads(first: 100) {
+          nodes { isResolved }
         }
       }
     }
@@ -202,8 +199,9 @@ interface UnresolvedThreadsResponse {
   data: {
     repository: {
       pullRequest: {
-        reviewThreads: { totalCount: number };
-        resolvedThreads: { totalCount: number };
+        reviewThreads: {
+          nodes: Array<{ isResolved: boolean }>;
+        };
       };
     };
   };
@@ -218,8 +216,8 @@ export async function fetchUnresolvedThreadCount(
     repo: gh.repo,
     number: prNumber,
   })) as UnresolvedThreadsResponse;
-  const pr = result.data.repository.pullRequest;
-  return pr.reviewThreads.totalCount - pr.resolvedThreads.totalCount;
+  const threads = result.data.repository.pullRequest.reviewThreads.nodes;
+  return threads.filter((t) => !t.isResolved).length;
 }
 
 // ── VcsProvider implementation ──────────────────────────────────────
