@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { AppConfig, VcsProvider, BranchPrMap } from '@kirby/vcs-core';
 import { isVcsConfigured } from '@kirby/vcs-core';
+import { logError } from '../log.js';
 
 export function usePrData(
   config: AppConfig,
@@ -24,6 +25,7 @@ export function usePrData(
         }
       })
       .catch((err: Error) => {
+        logError(`fetchPullRequests [${provider.id}]`, err);
         if (mountedRef.current) {
           setError(err.message);
         }

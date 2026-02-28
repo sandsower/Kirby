@@ -45,17 +45,6 @@ export async function ghGraphQL(
   }
 }
 
-// ── Internal types ────────────────────────────────────────────────
-
-interface GitHubProject {
-  owner: string;
-  repo: string;
-}
-
-function toGitHubProject(project: Record<string, string>): GitHubProject {
-  return { owner: project.owner ?? '', repo: project.repo ?? '' };
-}
-
 // ── Internal helpers ───────────────────────────────────────────────
 
 export function parseGitHubRemoteUrl(
@@ -86,11 +75,11 @@ export function mapReviewState(state: string): ReviewDecision {
 }
 
 export function latestReviewPerUser(
-  reviews: Array<{ user: { login: string }; state: string }>
+  reviews: Array<{ author: { login: string }; state: string }>
 ): PullRequestReviewer[] {
   const byUser = new Map<string, { login: string; state: string }>();
   for (const r of reviews) {
-    byUser.set(r.user.login, { login: r.user.login, state: r.state });
+    byUser.set(r.author.login, { login: r.author.login, state: r.state });
   }
   return [...byUser.values()].map((r) => ({
     displayName: r.login,
@@ -194,11 +183,7 @@ export function mapRollupState(
 }
 
 function transformSearchNode(node: SearchPrNode): PullRequestInfo {
-  const reviews = node.reviews.nodes.map((r) => ({
-    user: { login: r.author.login },
-    state: r.state,
-  }));
-  const reviewers = latestReviewPerUser(reviews);
+  const reviewers = latestReviewPerUser(node.reviews.nodes);
 
   const unresolvedCount = node.reviewThreads.nodes.filter(
     (t) => !t.isResolved
@@ -257,11 +242,10 @@ export const githubProvider: VcsProvider = {
     _auth: Record<string, string>,
     project: Record<string, string>
   ): Promise<BranchPrMap> {
-    const username = project.username;
-    if (!username) return {};
+    const { owner, repo, username } = project;
+    if (!username || !owner || !repo) return {};
 
-    const gh = toGitHubProject(project);
-    const searchQuery = `repo:${gh.owner}/${gh.repo} is:pr is:open involves:${username}`;
+    const searchQuery = `repo:${owner}/${repo} is:pr is:open involves:${username}`;
 
     const map: BranchPrMap = {};
     let cursor: string | undefined;
@@ -281,9 +265,10 @@ export const githubProvider: VcsProvider = {
         map[pr.sourceBranch] = pr;
       }
 
-      cursor = pageInfo.hasNextPage
-        ? pageInfo.endCursor ?? undefined
-        : undefined;
+      cursor =
+        pageInfo.hasNextPage && pageInfo.endCursor
+          ? pageInfo.endCursor
+          : undefined;
     } while (cursor);
 
     return map;

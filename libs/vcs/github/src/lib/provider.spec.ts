@@ -104,9 +104,9 @@ describe('mapReviewState', () => {
 describe('latestReviewPerUser', () => {
   it('keeps latest review per user', () => {
     const reviews = [
-      { user: { login: 'alice' }, state: 'COMMENTED' },
-      { user: { login: 'alice' }, state: 'APPROVED' },
-      { user: { login: 'bob' }, state: 'CHANGES_REQUESTED' },
+      { author: { login: 'alice' }, state: 'COMMENTED' },
+      { author: { login: 'alice' }, state: 'APPROVED' },
+      { author: { login: 'bob' }, state: 'CHANGES_REQUESTED' },
     ];
     const result = latestReviewPerUser(reviews);
     expect(result).toHaveLength(2);
@@ -122,7 +122,7 @@ describe('latestReviewPerUser', () => {
 
   it('sets displayName and identifier to login', () => {
     const result = latestReviewPerUser([
-      { user: { login: 'charlie' }, state: 'APPROVED' },
+      { author: { login: 'charlie' }, state: 'APPROVED' },
     ]);
     expect(result[0]).toEqual({
       displayName: 'charlie',

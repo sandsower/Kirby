@@ -8,11 +8,11 @@ function truncate(text: string, max: number): string {
 function buildEmoji(status: string | undefined): string {
   switch (status) {
     case 'failed':
-      return ' \uD83D\uDD25';
+      return ' 🔧🔥';
     case 'succeeded':
-      return ' \u2705';
+      return ' 🔧✅';
     case 'pending':
-      return ' \u23F3';
+      return ' 🔧⏳';
     default:
       return '';
   }
@@ -138,6 +138,9 @@ export function ReviewsSidebar({
         <Text dimColor>
           <Text color="cyan">q</Text> quit
         </Text>
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text dimColor>🔧✅ passed 🔧🔥 failed 🔧⏳ pending</Text>
       </Box>
     </Box>
   );

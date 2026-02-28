@@ -77,7 +77,8 @@ export function PrBadge({
       {statusEmoji || buildEmoji ? (
         <Box flexGrow={1} justifyContent="flex-end">
           <Text>
-            {buildEmoji}
+            {buildEmoji ? `🔧${buildEmoji}` : ''}
+            {buildEmoji && statusEmoji ? ' ' : ''}
             {statusEmoji}
           </Text>
         </Box>

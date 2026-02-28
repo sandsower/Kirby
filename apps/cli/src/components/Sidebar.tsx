@@ -147,6 +147,10 @@ export function Sidebar({
           <Text color="cyan">q</Text> quit
         </Text>
       </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text dimColor>🔧✅ passed 🔧🔥 failed 🔧⏳ pending</Text>
+        <Text dimColor>🔔 needs attention ⭐ fully approved</Text>
+      </Box>
     </Box>
   );
 }

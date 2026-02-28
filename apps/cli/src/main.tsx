@@ -176,7 +176,7 @@ function App() {
 
   // Orphan PRs: user's PRs that don't have a matching worktree session
   const orphanPrs = useMemo(() => {
-    if (!config.email || !provider) return [];
+    if (!provider) return [];
     const sessionNames = new Set(sessions.map((s) => s.name));
     return Object.values(prMap)
       .filter(
@@ -190,7 +190,7 @@ function App() {
 
   // Categorize PRs where the user is a reviewer
   const categorizedReviews = useMemo((): CategorizedReviews => {
-    if (!config.email || !provider)
+    if (!provider)
       return { needsReview: [], waitingForAuthor: [], approvedByYou: [] };
     const needsReview: PullRequestInfo[] = [];
     const waitingForAuthor: PullRequestInfo[] = [];
