@@ -6,7 +6,7 @@ import {
   listSessions,
   killSession,
   removeWorktree,
-  listBranches,
+  listAllBranches,
   listWorktrees,
   branchToSessionName,
 } from '@kirby/tmux-manager';
@@ -29,6 +29,7 @@ import { BranchPicker } from './components/BranchPicker.js';
 import { SettingsPanel } from './components/SettingsPanel.js';
 import { ReviewsSidebar } from './components/ReviewsSidebar.js';
 import { ReviewDetailPane } from './components/ReviewDetailPane.js';
+import { ReviewConfirmPane } from './components/ReviewConfirmPane.js';
 import { usePrData } from './hooks/usePrData.js';
 import { useControlMode } from './hooks/useControlMode.js';
 import {
@@ -36,6 +37,7 @@ import {
   handleConfirmDeleteInput,
   handleSettingsInput,
   handleGlobalInput,
+  handleReviewConfirmInput,
 } from './input-handlers.js';
 import type { AppContext } from './input-handlers.js';
 
@@ -95,8 +97,8 @@ function StatusBar({
   }
   return (
     <Text dimColor>
-      kirby · {sessionCount} sessions · focus: <Text color="cyan">{focus}</Text>{' '}
-      · tmux: {hasTmux ? '✓' : '✕'}
+      {sessionCount} sessions · focus: <Text color="cyan">{focus}</Text> · tmux:{' '}
+      {hasTmux ? '✓' : '✕'}
       {!adoConfigured ? ' · (s to configure ADO)' : ''}
     </Text>
   );
@@ -113,7 +115,7 @@ function App() {
   const adoConfigured = isAdoConfigured(config);
   const sidebarWidth = adoConfigured ? 48 : 24;
   const paneCols = Math.max(20, termCols - sidebarWidth - 2);
-  const paneRows = Math.max(5, termRows - 4); // 1 tab bar + 1 heading + 1 separator + 1 status bar
+  const paneRows = Math.max(5, termRows - 3); // 1 tab bar (includes status) + 1 heading + 1 separator
   const [activeTab, setActiveTab] = useState<ActiveTab>('sessions');
   const [focus, setFocus] = useState<Focus>('sidebar');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -138,6 +140,16 @@ function App() {
   const [editBuffer, setEditBuffer] = useState('');
   const [reconnectKey, setReconnectKey] = useState(0);
   const [reviewSelectedIndex, setReviewSelectedIndex] = useState(0);
+  const [reviewPaneContent, setReviewPaneContent] = useState('');
+  const [reviewReconnectKey, setReviewReconnectKey] = useState(0);
+  const [reviewSessionStarted, setReviewSessionStarted] = useState<Set<number>>(
+    new Set()
+  );
+  const [reviewConfirm, setReviewConfirm] = useState<{
+    pr: PullRequestInfo;
+    selectedOption: number;
+  } | null>(null);
+  const [reviewInstruction, setReviewInstruction] = useState('');
   const { prMap, error: prError, refresh: refreshPr } = usePrData(config);
 
   // Orphan PRs: user's PRs that don't have a matching worktree session
@@ -158,10 +170,10 @@ function App() {
   // Categorize PRs where the user is a reviewer
   const categorizedReviews = useMemo((): CategorizedReviews => {
     if (!config.email)
-      return { needsReview: [], changesRequested: [], approvedByYou: [] };
+      return { needsReview: [], waitingForAuthor: [], approvedByYou: [] };
     const email = config.email.toLowerCase();
     const needsReview: PullRequestInfo[] = [];
-    const changesRequested: PullRequestInfo[] = [];
+    const waitingForAuthor: PullRequestInfo[] = [];
     const approvedByYou: PullRequestInfo[] = [];
 
     for (const pr of Object.values(prMap)) {
@@ -170,20 +182,21 @@ function App() {
         (r) => r.uniqueName.toLowerCase() === email
       );
       if (!reviewer) continue;
+      if (reviewer.hasDeclined) continue;
       if (reviewer.vote === 5 || reviewer.vote === 10) {
         approvedByYou.push(pr);
       } else if (reviewer.vote === -5 || reviewer.vote === -10) {
-        changesRequested.push(pr);
+        waitingForAuthor.push(pr);
       } else {
         needsReview.push(pr);
       }
     }
-    return { needsReview, changesRequested, approvedByYou };
+    return { needsReview, waitingForAuthor, approvedByYou };
   }, [prMap, config.email]);
 
   const reviewTotalItems =
     categorizedReviews.needsReview.length +
-    categorizedReviews.changesRequested.length +
+    categorizedReviews.waitingForAuthor.length +
     categorizedReviews.approvedByYou.length;
 
   // Clamp reviewSelectedIndex when review items shrink
@@ -219,12 +232,15 @@ function App() {
   const allReviewPrs = useMemo(
     () => [
       ...categorizedReviews.needsReview,
-      ...categorizedReviews.changesRequested,
+      ...categorizedReviews.waitingForAuthor,
       ...categorizedReviews.approvedByYou,
     ],
     [categorizedReviews]
   );
   const selectedReviewPr = allReviewPrs[reviewSelectedIndex];
+  const reviewSessionName = selectedReviewPr
+    ? `review-pr-${selectedReviewPr.pullRequestId}`
+    : null;
 
   // Clamp selectedIndex when total items shrinks
   useEffect(() => {
@@ -240,7 +256,7 @@ function App() {
     if (ok) {
       refreshSessions();
     }
-    setBranches(listBranches());
+    setBranches(listAllBranches());
 
     // Auto-detect per-project fields on first launch
     const { updated } = autoDetectProjectConfig();
@@ -268,8 +284,9 @@ function App() {
         filtered.push({ name, windows: 0, created: 0, attached: false });
       }
     }
-    setSessions(filtered);
-    return filtered;
+    const nonReview = filtered.filter((s) => !s.name.startsWith('review-pr-'));
+    setSessions(nonReview);
+    return nonReview;
   };
 
   // Show a temporary status message for 3 seconds
@@ -303,6 +320,15 @@ function App() {
     reconnectKey
   );
 
+  // Control mode connection for review terminal
+  const { sendInput: sendReviewInput } = useControlMode(
+    hasTmux && activeTab === 'reviews' ? reviewSessionName : null,
+    paneCols,
+    paneRows,
+    setReviewPaneContent,
+    reviewReconnectKey
+  );
+
   // Build context object for input handlers
   const ctx: AppContext = {
     config,
@@ -326,6 +352,16 @@ function App() {
     totalItems,
     reviewSelectedIndex,
     reviewTotalItems,
+    reviewSessionName,
+    selectedReviewPr,
+    sendReviewInput,
+    setReviewReconnectKey,
+    reviewSessionStarted,
+    setReviewSessionStarted,
+    reviewConfirm,
+    setReviewConfirm,
+    reviewInstruction,
+    setReviewInstruction,
     setCreating,
     setBranchFilter,
     setBranchIndex,
@@ -354,15 +390,34 @@ function App() {
     if (creating) return handleBranchPickerInput(input, key, ctx);
     if (confirmDelete) return handleConfirmDeleteInput(input, key, ctx);
     if (settingsOpen) return handleSettingsInput(input, key, ctx);
+    if (reviewConfirm) return handleReviewConfirmInput(input, key, ctx);
     handleGlobalInput(input, key, ctx);
   });
 
   return (
     <Box flexDirection="column" height={termRows}>
-      <TabBar
-        activeTab={activeTab}
-        reviewCount={categorizedReviews.needsReview.length}
-      />
+      <Box paddingX={1} justifyContent="space-between">
+        <Box gap={2}>
+          <Text bold>😸 Kirby</Text>
+          <TabBar
+            activeTab={activeTab}
+            reviewCount={categorizedReviews.needsReview.length}
+          />
+          <StatusBar
+            confirmDelete={confirmDelete}
+            confirmInput={confirmInput}
+            creating={creating}
+            branchFilter={branchFilter}
+            statusMessage={statusMessage}
+            prError={prError}
+            sessionCount={sortedSessions.length}
+            focus={focus}
+            hasTmux={hasTmux}
+            adoConfigured={adoConfigured}
+          />
+        </Box>
+        <Text dimColor>{process.cwd()}</Text>
+      </Box>
       <Box flexGrow={1}>
         {activeTab === 'sessions' && (
           <>
@@ -393,6 +448,7 @@ function App() {
                 filter={branchFilter}
                 branches={branches}
                 selectedIndex={branchIndex}
+                paneRows={paneRows}
               />
             )}
             {!settingsOpen && !creating && (
@@ -407,29 +463,27 @@ function App() {
           <>
             <ReviewsSidebar
               categorized={categorizedReviews}
-              selectedIndex={reviewSelectedIndex}
+              selectedPrId={selectedReviewPr?.pullRequestId}
               sidebarWidth={sidebarWidth}
+              focused={focus === 'sidebar' && !reviewConfirm}
             />
-            <ReviewDetailPane pr={selectedReviewPr} />
+            {reviewConfirm ? (
+              <ReviewConfirmPane
+                pr={reviewConfirm.pr}
+                selectedOption={reviewConfirm.selectedOption}
+                instruction={reviewInstruction}
+              />
+            ) : selectedReviewPr &&
+              reviewSessionStarted.has(selectedReviewPr.pullRequestId) ? (
+              <TerminalView
+                content={reviewPaneContent}
+                focused={focus === 'terminal'}
+              />
+            ) : (
+              <ReviewDetailPane pr={selectedReviewPr} />
+            )}
           </>
         )}
-      </Box>
-      <Box paddingX={1} justifyContent="space-between">
-        <Box>
-          <StatusBar
-            confirmDelete={confirmDelete}
-            confirmInput={confirmInput}
-            creating={creating}
-            branchFilter={branchFilter}
-            statusMessage={statusMessage}
-            prError={prError}
-            sessionCount={sortedSessions.length}
-            focus={focus}
-            hasTmux={hasTmux}
-            adoConfigured={adoConfigured}
-          />
-        </Box>
-        <Text dimColor>{process.cwd()}</Text>
       </Box>
     </Box>
   );

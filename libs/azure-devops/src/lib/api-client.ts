@@ -2,6 +2,7 @@ import type {
   PullRequestInfo,
   PullRequestReviewer,
   ReviewerVote,
+  BuildStatusState,
   BranchPrMap,
 } from '@kirby/shared-types';
 
@@ -29,6 +30,7 @@ export function parseReviewer(raw: {
   displayName?: string;
   uniqueName?: string;
   vote?: number;
+  hasDeclined?: boolean;
 }): PullRequestReviewer {
   const vote = raw.vote ?? 0;
   const validVotes: ReviewerVote[] = [10, 5, 0, -5, -10];
@@ -38,6 +40,7 @@ export function parseReviewer(raw: {
     vote: validVotes.includes(vote as ReviewerVote)
       ? (vote as ReviewerVote)
       : 0,
+    hasDeclined: raw.hasDeclined ?? false,
   };
 }
 
@@ -51,9 +54,10 @@ export function parsePullRequest(raw: {
     displayName?: string;
     uniqueName?: string;
     vote?: number;
+    hasDeclined?: boolean;
   }>;
   createdBy?: { uniqueName?: string; displayName?: string };
-}): Omit<PullRequestInfo, 'activeCommentCount'> {
+}): Omit<PullRequestInfo, 'activeCommentCount' | 'buildStatus'> {
   const sourceBranch = (raw.sourceRefName ?? '').replace(/^refs\/heads\//, '');
   const targetBranch = (raw.targetRefName ?? '').replace(/^refs\/heads\//, '');
   return {
@@ -84,11 +88,47 @@ export function countActiveThreads(
   }).length;
 }
 
+function mapRawState(raw: string | undefined): BuildStatusState {
+  switch (raw) {
+    case 'succeeded':
+      return 'succeeded';
+    case 'failed':
+    case 'error':
+      return 'failed';
+    case 'pending':
+    case 'notSet':
+      return 'pending';
+    default:
+      return 'none';
+  }
+}
+
+export function deriveBuildStatus(
+  statuses: Array<{ state?: string }>
+): BuildStatusState {
+  let hasFailed = false;
+  let hasPending = false;
+  let hasSucceeded = false;
+
+  for (const s of statuses) {
+    if (s.state === 'notApplicable') continue;
+    const mapped = mapRawState(s.state);
+    if (mapped === 'failed') hasFailed = true;
+    if (mapped === 'pending') hasPending = true;
+    if (mapped === 'succeeded') hasSucceeded = true;
+  }
+
+  if (hasFailed) return 'failed';
+  if (hasPending) return 'pending';
+  if (hasSucceeded) return 'succeeded';
+  return 'none';
+}
+
 // --- API functions ---
 
 export async function fetchActivePullRequests(
   config: AdoConfig
-): Promise<Array<Omit<PullRequestInfo, 'activeCommentCount'>>> {
+): Promise<Array<Omit<PullRequestInfo, 'activeCommentCount' | 'buildStatus'>>> {
   const url = `${baseUrl(
     config
   )}/pullrequests?searchCriteria.status=active&api-version=7.1`;
@@ -120,19 +160,38 @@ export async function fetchActiveCommentCount(
   );
 }
 
+export async function fetchPrBuildStatus(
+  config: AdoConfig,
+  prId: number
+): Promise<BuildStatusState> {
+  const url = `${baseUrl(
+    config
+  )}/pullrequests/${prId}/statuses?api-version=7.1`;
+  const res = await fetch(url, { headers: authHeaders(config.pat) });
+  if (!res.ok) {
+    throw new Error(`ADO API error ${res.status}: ${res.statusText}`);
+  }
+  const data = (await res.json()) as { value?: unknown[] };
+  return deriveBuildStatus((data.value ?? []) as Array<{ state?: string }>);
+}
+
 export async function fetchPullRequestsWithComments(
   config: AdoConfig
 ): Promise<BranchPrMap> {
   const prs = await fetchActivePullRequests(config);
 
-  // Fetch thread counts in parallel
+  // Fetch thread counts and build statuses in parallel
   const withComments = await Promise.all(
     prs.map(async (pr) => {
-      const activeCommentCount = await fetchActiveCommentCount(
-        config,
-        pr.pullRequestId
-      );
-      return { ...pr, activeCommentCount } satisfies PullRequestInfo;
+      const [activeCommentCount, buildStatus] = await Promise.all([
+        fetchActiveCommentCount(config, pr.pullRequestId),
+        fetchPrBuildStatus(config, pr.pullRequestId),
+      ]);
+      return {
+        ...pr,
+        activeCommentCount,
+        buildStatus,
+      } satisfies PullRequestInfo;
     })
   );
 

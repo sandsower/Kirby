@@ -3,8 +3,10 @@ import {
   parseReviewer,
   parsePullRequest,
   countActiveThreads,
+  deriveBuildStatus,
   fetchActivePullRequests,
   fetchActiveCommentCount,
+  fetchPrBuildStatus,
   fetchPullRequestsWithComments,
 } from './api-client.js';
 
@@ -40,6 +42,7 @@ describe('parseReviewer', () => {
       displayName: 'Alice',
       uniqueName: 'alice@example.com',
       vote: 10,
+      hasDeclined: false,
     });
   });
 
@@ -48,6 +51,7 @@ describe('parseReviewer', () => {
       displayName: 'Unknown',
       uniqueName: '',
       vote: 0,
+      hasDeclined: false,
     });
   });
 
@@ -56,6 +60,7 @@ describe('parseReviewer', () => {
       displayName: 'Bob',
       uniqueName: '',
       vote: 0,
+      hasDeclined: false,
     });
   });
 
@@ -63,6 +68,22 @@ describe('parseReviewer', () => {
     for (const vote of [10, 5, 0, -5, -10]) {
       expect(parseReviewer({ vote }).vote).toBe(vote);
     }
+  });
+
+  it('parses hasDeclined when true', () => {
+    expect(
+      parseReviewer({
+        displayName: 'Carol',
+        uniqueName: 'carol@example.com',
+        vote: 0,
+        hasDeclined: true,
+      })
+    ).toEqual({
+      displayName: 'Carol',
+      uniqueName: 'carol@example.com',
+      vote: 0,
+      hasDeclined: true,
+    });
   });
 });
 
@@ -89,7 +110,12 @@ describe('parsePullRequest', () => {
       targetBranch: 'main',
       isDraft: true,
       reviewers: [
-        { displayName: 'Alice', uniqueName: 'alice@example.com', vote: 10 },
+        {
+          displayName: 'Alice',
+          uniqueName: 'alice@example.com',
+          vote: 10,
+          hasDeclined: false,
+        },
       ],
       createdByUniqueName: 'bob@example.com',
       createdByDisplayName: 'Bob Builder',
@@ -172,6 +198,50 @@ describe('countActiveThreads', () => {
   });
 });
 
+describe('deriveBuildStatus', () => {
+  it('returns succeeded when all statuses are succeeded', () => {
+    expect(
+      deriveBuildStatus([{ state: 'succeeded' }, { state: 'succeeded' }])
+    ).toBe('succeeded');
+  });
+
+  it('returns failed when any status is failed', () => {
+    expect(
+      deriveBuildStatus([{ state: 'succeeded' }, { state: 'failed' }])
+    ).toBe('failed');
+  });
+
+  it('returns failed when any status is error', () => {
+    expect(
+      deriveBuildStatus([{ state: 'succeeded' }, { state: 'error' }])
+    ).toBe('failed');
+  });
+
+  it('returns pending when mix of succeeded and pending', () => {
+    expect(
+      deriveBuildStatus([{ state: 'succeeded' }, { state: 'pending' }])
+    ).toBe('pending');
+  });
+
+  it('returns pending for notSet state', () => {
+    expect(deriveBuildStatus([{ state: 'notSet' }])).toBe('pending');
+  });
+
+  it('returns none for empty array', () => {
+    expect(deriveBuildStatus([])).toBe('none');
+  });
+
+  it('ignores notApplicable statuses', () => {
+    expect(deriveBuildStatus([{ state: 'notApplicable' }])).toBe('none');
+  });
+
+  it('returns succeeded when notApplicable mixed with succeeded', () => {
+    expect(
+      deriveBuildStatus([{ state: 'notApplicable' }, { state: 'succeeded' }])
+    ).toBe('succeeded');
+  });
+});
+
 describe('fetchActivePullRequests', () => {
   beforeEach(() => mockFetch.mockReset());
 
@@ -247,6 +317,31 @@ describe('fetchActiveCommentCount', () => {
   });
 });
 
+describe('fetchPrBuildStatus', () => {
+  beforeEach(() => mockFetch.mockReset());
+
+  it('calls correct URL and returns derived build status', async () => {
+    mockFetch.mockResolvedValue(
+      jsonResponse({
+        value: [{ state: 'succeeded' }, { state: 'pending' }],
+      })
+    );
+
+    const result = await fetchPrBuildStatus(testConfig, 42);
+    expect(result).toBe('pending');
+
+    const calledUrl = mockFetch.mock.calls[0]![0] as string;
+    expect(calledUrl).toContain('/pullrequests/42/statuses');
+  });
+
+  it('throws on non-ok response', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({}, 403));
+    await expect(fetchPrBuildStatus(testConfig, 42)).rejects.toThrow(
+      'ADO API error 403'
+    );
+  });
+});
+
 describe('fetchPullRequestsWithComments', () => {
   beforeEach(() => mockFetch.mockReset());
 
@@ -270,7 +365,7 @@ describe('fetchPullRequestsWithComments', () => {
         ],
       })
     );
-    // Thread calls for each PR
+    // PR 42: threads then statuses
     mockFetch.mockResolvedValueOnce(
       jsonResponse({
         value: [
@@ -279,7 +374,14 @@ describe('fetchPullRequestsWithComments', () => {
         ],
       })
     );
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ value: [{ state: 'succeeded' }] })
+    );
+    // PR 43: threads then statuses
     mockFetch.mockResolvedValueOnce(jsonResponse({ value: [] }));
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({ value: [{ state: 'failed' }] })
+    );
 
     const result = await fetchPullRequestsWithComments(testConfig);
 
@@ -289,8 +391,11 @@ describe('fetchPullRequestsWithComments', () => {
       sourceBranch: 'feat-a',
       targetBranch: '',
       isDraft: false,
-      reviewers: [{ displayName: 'Alice', uniqueName: '', vote: 10 }],
+      reviewers: [
+        { displayName: 'Alice', uniqueName: '', vote: 10, hasDeclined: false },
+      ],
       activeCommentCount: 2,
+      buildStatus: 'succeeded',
       createdByUniqueName: undefined,
       createdByDisplayName: undefined,
     });
@@ -302,6 +407,7 @@ describe('fetchPullRequestsWithComments', () => {
       isDraft: true,
       reviewers: [],
       activeCommentCount: 0,
+      buildStatus: 'failed',
       createdByUniqueName: undefined,
       createdByDisplayName: undefined,
     });

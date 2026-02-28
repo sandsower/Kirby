@@ -5,19 +5,30 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max - 3) + '...' : text;
 }
 
+function buildEmoji(status: string): string {
+  switch (status) {
+    case 'failed':
+      return ' \uD83D\uDD25';
+    case 'succeeded':
+      return ' \u2705';
+    case 'pending':
+      return ' \u23F3';
+    default:
+      return '';
+  }
+}
+
 function ReviewSection({
   title,
   titleColor,
   prs,
-  startIndex,
-  selectedIndex,
+  selectedPrId,
   innerWidth,
 }: {
   title: string;
   titleColor: string;
   prs: PullRequestInfo[];
-  startIndex: number;
-  selectedIndex: number;
+  selectedPrId: number | undefined;
   innerWidth: number;
 }) {
   if (prs.length === 0) return null;
@@ -29,8 +40,8 @@ function ReviewSection({
         </Text>
       </Box>
       <Text dimColor>{'─'.repeat(innerWidth)}</Text>
-      {prs.map((pr, i) => {
-        const selected = startIndex + i === selectedIndex;
+      {prs.map((pr) => {
+        const selected = pr.pullRequestId === selectedPrId;
         return (
           <Box key={pr.pullRequestId} flexDirection="column">
             <Text>
@@ -38,7 +49,8 @@ function ReviewSection({
                 {selected ? '› ' : '  '}
               </Text>
               <Text bold={selected}>
-                {truncate(pr.title || pr.sourceBranch, innerWidth - 2)}
+                {truncate(pr.title || pr.sourceBranch, innerWidth - 4)}
+                {buildEmoji(pr.buildStatus)}
               </Text>
             </Text>
             <Text dimColor>
@@ -58,27 +70,24 @@ function ReviewSection({
 
 export function ReviewsSidebar({
   categorized,
-  selectedIndex,
+  selectedPrId,
   sidebarWidth,
+  focused = true,
 }: {
   categorized: CategorizedReviews;
-  selectedIndex: number;
+  selectedPrId: number | undefined;
   sidebarWidth: number;
+  focused?: boolean;
 }) {
   const innerWidth = Math.max(10, sidebarWidth - 2);
   const totalItems =
     categorized.needsReview.length +
-    categorized.changesRequested.length +
+    categorized.waitingForAuthor.length +
     categorized.approvedByYou.length;
-
-  const needsReviewStart = 0;
-  const changesRequestedStart = categorized.needsReview.length;
-  const approvedStart =
-    changesRequestedStart + categorized.changesRequested.length;
 
   return (
     <Box flexDirection="column" width={sidebarWidth} paddingX={1}>
-      <Text bold color="blue">
+      <Text bold color={focused ? 'blue' : 'gray'}>
         Reviews
       </Text>
       <Text dimColor>{'─'.repeat(innerWidth)}</Text>
@@ -90,24 +99,21 @@ export function ReviewsSidebar({
             title="Needs Your Review"
             titleColor="red"
             prs={categorized.needsReview}
-            startIndex={needsReviewStart}
-            selectedIndex={selectedIndex}
+            selectedPrId={selectedPrId}
             innerWidth={innerWidth}
           />
           <ReviewSection
-            title="Changes Requested"
+            title="Waiting for Author"
             titleColor="yellow"
-            prs={categorized.changesRequested}
-            startIndex={changesRequestedStart}
-            selectedIndex={selectedIndex}
+            prs={categorized.waitingForAuthor}
+            selectedPrId={selectedPrId}
             innerWidth={innerWidth}
           />
           <ReviewSection
             title="Approved by You"
             titleColor="green"
             prs={categorized.approvedByYou}
-            startIndex={approvedStart}
-            selectedIndex={selectedIndex}
+            selectedPrId={selectedPrId}
             innerWidth={innerWidth}
           />
         </>
@@ -115,6 +121,12 @@ export function ReviewsSidebar({
       <Box marginTop={1} flexDirection="column">
         <Text dimColor>
           <Text color="cyan">j/k</Text> navigate
+        </Text>
+        <Text dimColor>
+          <Text color="cyan">enter</Text> review with Claude
+        </Text>
+        <Text dimColor>
+          <Text color="cyan">esc</Text> back to sidebar
         </Text>
         <Text dimColor>
           <Text color="cyan">1</Text> sessions tab

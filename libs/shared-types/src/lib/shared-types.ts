@@ -1,10 +1,12 @@
 // Azure DevOps PR types
 export type ReviewerVote = 10 | 5 | 0 | -5 | -10;
+export type BuildStatusState = 'succeeded' | 'failed' | 'pending' | 'none';
 
 export interface PullRequestReviewer {
   displayName: string;
   uniqueName: string;
   vote: ReviewerVote;
+  hasDeclined: boolean;
 }
 
 export interface PullRequestInfo {
@@ -15,6 +17,7 @@ export interface PullRequestInfo {
   isDraft: boolean;
   reviewers: PullRequestReviewer[];
   activeCommentCount: number;
+  buildStatus: BuildStatusState;
   createdByUniqueName?: string;
   createdByDisplayName?: string;
 }
@@ -23,7 +26,7 @@ export type ActiveTab = 'sessions' | 'reviews';
 
 export interface CategorizedReviews {
   needsReview: PullRequestInfo[];
-  changesRequested: PullRequestInfo[];
+  waitingForAuthor: PullRequestInfo[];
   approvedByYou: PullRequestInfo[];
 }
 

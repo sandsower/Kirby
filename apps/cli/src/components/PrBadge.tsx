@@ -39,9 +39,14 @@ export function PrBadge({
   let statusEmoji = '';
   if (allApproved && !needsAttention) {
     statusEmoji = '⭐';
-  } else if (needsAttention) {
+  } else if (needsAttention && !pr.isDraft) {
     statusEmoji = '🔔';
   }
+
+  let buildEmoji = '';
+  if (pr.buildStatus === 'failed') buildEmoji = '🔥';
+  else if (pr.buildStatus === 'succeeded') buildEmoji = '✅';
+  else if (pr.buildStatus === 'pending') buildEmoji = '⏳';
 
   const innerWidth = Math.max(10, sidebarWidth - 2);
 
@@ -63,9 +68,12 @@ export function PrBadge({
           }`}</Text>
         ) : null}
       </Text>
-      {statusEmoji ? (
+      {statusEmoji || buildEmoji ? (
         <Box flexGrow={1} justifyContent="flex-end">
-          <Text>{statusEmoji}</Text>
+          <Text>
+            {buildEmoji}
+            {statusEmoji}
+          </Text>
         </Box>
       ) : null}
     </Box>
