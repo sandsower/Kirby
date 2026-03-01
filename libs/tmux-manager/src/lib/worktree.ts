@@ -213,6 +213,44 @@ export function listWorktrees(): WorktreeInfo[] {
   }
 }
 
+/** Fast-forward local master to origin/master. Returns true on success. */
+export function fastForwardMaster(): boolean {
+  try {
+    execSync('git fetch origin master', { encoding: 'utf8', stdio: 'pipe' });
+    execSync('git branch -f master origin/master', {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Count conflicting files between a branch and origin/master.
+ * Uses `git merge-tree --write-tree` (Git 2.38+).
+ * Returns 0 if no conflicts.
+ */
+export function countConflicts(branch: string): number {
+  try {
+    execSync(`git merge-tree --write-tree origin/master "${branch}"`, {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    return 0; // clean merge — no conflicts
+  } catch (err: unknown) {
+    // Exit code 1 = conflicts; stderr lists conflicted files
+    const e = err as { status?: number; stdout?: string };
+    if (e.status === 1 && typeof e.stdout === 'string') {
+      // Each "CONFLICT" line in stdout represents a conflicting file
+      const lines = e.stdout.split('\n');
+      return lines.filter((l) => l.startsWith('CONFLICT')).length;
+    }
+    return 0;
+  }
+}
+
 /**
  * Fetch origin/master and rebase the worktree's branch onto it.
  * If conflicts arise, the rebase is automatically aborted.

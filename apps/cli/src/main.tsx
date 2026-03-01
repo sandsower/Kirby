@@ -34,6 +34,7 @@ import { ReviewsSidebar } from './components/ReviewsSidebar.js';
 import { ReviewDetailPane } from './components/ReviewDetailPane.js';
 import { ReviewConfirmPane } from './components/ReviewConfirmPane.js';
 import { usePrData } from './hooks/usePrData.js';
+import { useBranchSync } from './hooks/useBranchSync.js';
 import { useControlMode } from './hooks/useControlMode.js';
 import {
   handleBranchPickerInput,
@@ -131,7 +132,7 @@ function App() {
   }, [config.vendor]);
 
   const vcsConfigured = isVcsConfigured(config, provider);
-  const sidebarWidth = vcsConfigured ? 48 : 24;
+  const sidebarWidth = 48;
   const paneCols = Math.max(20, termCols - sidebarWidth - 2);
   const paneRows = Math.max(5, termRows - 3);
   const [activeTab, setActiveTab] = useState<ActiveTab>('sessions');
@@ -173,6 +174,22 @@ function App() {
     error: prError,
     refresh: refreshPr,
   } = usePrData(config, provider);
+
+  // Extract worktree branch names for branch sync
+  const worktreeBranches = useMemo(() => {
+    const worktrees = listWorktrees();
+    return worktrees.map((wt) => wt.branch);
+  }, [sessions]);
+
+  const { mergedBranches, conflictCounts, triggerSync } = useBranchSync(
+    config,
+    provider,
+    worktreeBranches,
+    (sessionName, branch) => {
+      performDelete(sessionName, branch);
+      flashStatus(`Auto-deleted merged branch: ${branch}`);
+    }
+  );
 
   // Orphan PRs: user's PRs that don't have a matching worktree session
   const orphanPrs = useMemo(() => {
@@ -346,6 +363,7 @@ function App() {
     config,
     provider,
     providers,
+    vcsConfigured,
     branches,
     branchFilter,
     branchIndex,
@@ -393,6 +411,7 @@ function App() {
     setReconnectKey,
     setBranches,
     flashStatus,
+    triggerSync,
     refreshSessions,
     refreshPr,
     performDelete,
@@ -410,12 +429,13 @@ function App() {
 
   return (
     <Box flexDirection="column" height={termRows}>
-      <Box paddingX={1} justifyContent="space-between">
+      <Box paddingX={1} justifyContent="space-between" marginBottom={1}>
         <Box gap={2}>
           <Text bold>😸 Kirby</Text>
           <TabBar
             activeTab={activeTab}
             reviewCount={categorizedReviews.needsReview.length}
+            vcsConfigured={vcsConfigured}
           />
           <StatusBar
             confirmDelete={confirmDelete}
@@ -443,6 +463,8 @@ function App() {
               vcsConfigured={vcsConfigured}
               sidebarWidth={sidebarWidth}
               orphanPrs={orphanPrs}
+              mergedBranches={mergedBranches}
+              conflictCounts={conflictCounts}
             />
             {settingsOpen && (
               <SettingsPanel
@@ -469,7 +491,7 @@ function App() {
             )}
           </>
         )}
-        {activeTab === 'reviews' && (
+        {activeTab === 'reviews' && vcsConfigured && (
           <>
             <ReviewsSidebar
               categorized={categorizedReviews}

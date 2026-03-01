@@ -43,6 +43,9 @@ interface RawGlobalConfig {
   prPollInterval?: number;
   aiCommand?: string;
   vendorAuth?: Record<string, Record<string, string>>;
+  autoDeleteOnMerge?: boolean;
+  autoRebase?: boolean;
+  mergePollInterval?: number;
 }
 
 interface RawProjectConfig {
@@ -125,6 +128,9 @@ export function readConfig(cwd = process.cwd()): AppConfig {
     vendor,
     vendorAuth,
     vendorProject,
+    autoDeleteOnMerge: global.autoDeleteOnMerge,
+    autoRebase: global.autoRebase,
+    mergePollInterval: global.mergePollInterval,
   };
 }
 

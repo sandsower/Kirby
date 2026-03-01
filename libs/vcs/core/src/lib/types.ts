@@ -65,6 +65,13 @@ export interface VcsProvider {
 
   /** Web URL for a specific PR */
   getPullRequestUrl(project: Record<string, string>, prId: number): string;
+
+  /** Return branch names (from the provided list) whose PRs have been merged */
+  fetchMergedBranches?(
+    auth: Record<string, string>,
+    project: Record<string, string>,
+    branches: string[]
+  ): Promise<Set<string>>;
 }
 
 export interface AppConfig {
@@ -74,4 +81,7 @@ export interface AppConfig {
   vendor?: string;
   vendorAuth: Record<string, string>;
   vendorProject: Record<string, string>;
+  autoDeleteOnMerge?: boolean;
+  autoRebase?: boolean;
+  mergePollInterval?: number; // ms, default 3600000, min 300000
 }

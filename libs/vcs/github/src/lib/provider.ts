@@ -207,6 +207,40 @@ function transformSearchNode(node: SearchPrNode): PullRequestInfo {
   };
 }
 
+// ── Merged PRs search ──────────────────────────────────────────────
+
+const SEARCH_MERGED_PRS_QUERY = `
+  query($searchQuery: String!, $cursor: String) {
+    search(query: $searchQuery, type: ISSUE, first: 100, after: $cursor) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      nodes {
+        ... on PullRequest {
+          headRefName
+        }
+      }
+    }
+  }
+`;
+
+interface MergedPrNode {
+  headRefName: string;
+}
+
+interface SearchMergedPrsResponse {
+  data: {
+    search: {
+      pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+      };
+      nodes: MergedPrNode[];
+    };
+  };
+}
+
 // ── VcsProvider implementation ──────────────────────────────────────
 
 export const githubProvider: VcsProvider = {
@@ -276,5 +310,49 @@ export const githubProvider: VcsProvider = {
 
   getPullRequestUrl(project: Record<string, string>, prId: number): string {
     return `https://github.com/${project.owner}/${project.repo}/pull/${prId}`;
+  },
+
+  async fetchMergedBranches(
+    _auth: Record<string, string>,
+    project: Record<string, string>,
+    branches: string[]
+  ): Promise<Set<string>> {
+    const { owner, repo, username } = project;
+    if (!username || !owner || !repo || branches.length === 0) return new Set();
+
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const searchQuery = `repo:${owner}/${repo} is:pr is:merged author:${username} merged:>${since}`;
+
+    const mergedHeads = new Set<string>();
+    let cursor: string | undefined;
+
+    do {
+      const variables: Record<string, string> = { searchQuery };
+      if (cursor) variables.cursor = cursor;
+
+      const result = (await ghGraphQL(
+        SEARCH_MERGED_PRS_QUERY,
+        variables
+      )) as SearchMergedPrsResponse;
+
+      const { nodes, pageInfo } = result.data.search;
+      for (const node of nodes) {
+        if (node.headRefName) mergedHeads.add(node.headRefName);
+      }
+
+      cursor =
+        pageInfo.hasNextPage && pageInfo.endCursor
+          ? pageInfo.endCursor
+          : undefined;
+    } while (cursor);
+
+    const branchSet = new Set(branches);
+    const matched = new Set<string>();
+    for (const head of mergedHeads) {
+      if (branchSet.has(head)) matched.add(head);
+    }
+    return matched;
   },
 };

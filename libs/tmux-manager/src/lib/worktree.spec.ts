@@ -4,8 +4,12 @@ import {
   removeWorktree,
   canRemoveBranch,
   listBranches,
+  fetchRemote,
+  listAllBranches,
   parseWorktrees,
   listWorktrees,
+  fastForwardMaster,
+  countConflicts,
   rebaseOntoMaster,
 } from './worktree.js';
 import { execSync } from 'node:child_process';
@@ -334,5 +338,129 @@ describe('rebaseOntoMaster', () => {
       }); // abort fails
     expect(rebaseOntoMaster('/path/to/worktree')).toBe('conflict');
     expect(mockExecSync).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('fetchRemote', () => {
+  it('should return true on success', () => {
+    mockExecSync.mockReturnValueOnce('');
+    expect(fetchRemote()).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledWith('git fetch --all --prune', {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+  });
+
+  it('should return false when git fails', () => {
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error('network error');
+    });
+    expect(fetchRemote()).toBe(false);
+  });
+});
+
+describe('listAllBranches', () => {
+  it('should return deduplicated local and remote branches', () => {
+    mockExecSync.mockReturnValueOnce(
+      'main\nfeature/auth\norigin/main\norigin/feature/auth\norigin/deploy\n'
+    );
+    const branches = listAllBranches();
+    expect(branches).toEqual(['main', 'feature/auth', 'deploy']);
+  });
+
+  it('should filter out HEAD pointer', () => {
+    mockExecSync.mockReturnValueOnce('main\norigin/HEAD\norigin/main\n');
+    expect(listAllBranches()).toEqual(['main']);
+  });
+
+  it('should handle empty output', () => {
+    mockExecSync.mockReturnValueOnce('');
+    expect(listAllBranches()).toEqual([]);
+  });
+
+  it('should return empty array when git fails', () => {
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error('not a git repository');
+    });
+    expect(listAllBranches()).toEqual([]);
+  });
+});
+
+describe('fastForwardMaster', () => {
+  it('should return true when fetch and branch update both succeed', () => {
+    mockExecSync.mockReturnValueOnce('').mockReturnValueOnce('');
+    expect(fastForwardMaster()).toBe(true);
+    expect(mockExecSync).toHaveBeenCalledWith('git fetch origin master', {
+      encoding: 'utf8',
+      stdio: 'pipe',
+    });
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'git branch -f master origin/master',
+      { encoding: 'utf8', stdio: 'pipe' }
+    );
+  });
+
+  it('should return false when fetch fails', () => {
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error('fetch failed');
+    });
+    expect(fastForwardMaster()).toBe(false);
+    expect(mockExecSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('should return false when branch update fails', () => {
+    mockExecSync.mockReturnValueOnce('').mockImplementationOnce(() => {
+      throw new Error('branch update failed');
+    });
+    expect(fastForwardMaster()).toBe(false);
+  });
+});
+
+describe('countConflicts', () => {
+  it('should return 0 for clean merge', () => {
+    mockExecSync.mockReturnValueOnce('abc123');
+    expect(countConflicts('feature/clean')).toBe(0);
+    expect(mockExecSync).toHaveBeenCalledWith(
+      'git merge-tree --write-tree origin/master "feature/clean"',
+      { encoding: 'utf8', stdio: 'pipe' }
+    );
+  });
+
+  it('should count CONFLICT lines from exit code 1', () => {
+    const err = new Error('merge conflict') as Error & {
+      status: number;
+      stdout: string;
+    };
+    err.status = 1;
+    err.stdout = [
+      'abc123',
+      'CONFLICT (content): Merge conflict in src/file1.ts',
+      'CONFLICT (content): Merge conflict in src/file2.ts',
+      '',
+    ].join('\n');
+    mockExecSync.mockImplementationOnce(() => {
+      throw err;
+    });
+    expect(countConflicts('feature/conflicts')).toBe(2);
+  });
+
+  it('should return 0 for non-conflict errors', () => {
+    mockExecSync.mockImplementationOnce(() => {
+      throw new Error('unknown error');
+    });
+    expect(countConflicts('feature/broken')).toBe(0);
+  });
+
+  it('should return 0 when exit code is 1 but no CONFLICT lines', () => {
+    const err = new Error('merge issue') as Error & {
+      status: number;
+      stdout: string;
+    };
+    err.status = 1;
+    err.stdout = 'abc123\n';
+    mockExecSync.mockImplementationOnce(() => {
+      throw err;
+    });
+    expect(countConflicts('feature/weird')).toBe(0);
   });
 });

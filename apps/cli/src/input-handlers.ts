@@ -30,6 +30,22 @@ import {
   type SettingsField,
 } from './components/SettingsPanel.js';
 
+/** Coerce a string value to the correct type for known config keys */
+function coerceConfigValue(
+  key: string,
+  value: string | undefined
+): string | boolean | number | undefined {
+  if (value === undefined) return undefined;
+  if (key === 'autoDeleteOnMerge' || key === 'autoRebase') {
+    return value === 'true';
+  }
+  if (key === 'mergePollInterval' || key === 'prPollInterval') {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  return value;
+}
+
 /** Update a config field in memory, returning a new AppConfig */
 function updateConfigField(
   config: AppConfig,
@@ -39,7 +55,10 @@ function updateConfigField(
   switch (field.configBag) {
     case 'global':
     case 'project':
-      return { ...config, [field.key]: value } as AppConfig;
+      return {
+        ...config,
+        [field.key]: coerceConfigValue(field.key, value),
+      } as AppConfig;
     case 'vendorAuth':
       return {
         ...config,
@@ -62,13 +81,19 @@ function persistConfigField(
   switch (field.configBag) {
     case 'global': {
       const g = readGlobalConfig();
-      (g as Record<string, unknown>)[field.key] = value;
+      (g as Record<string, unknown>)[field.key] = coerceConfigValue(
+        field.key,
+        value
+      );
       writeGlobalConfig(g);
       break;
     }
     case 'project': {
       const p = readProjectConfig();
-      (p as Record<string, unknown>)[field.key] = value;
+      (p as Record<string, unknown>)[field.key] = coerceConfigValue(
+        field.key,
+        value
+      );
       writeProjectConfig(p);
       break;
     }
@@ -100,6 +125,7 @@ export interface AppContext {
   config: AppConfig;
   provider: VcsProvider | null;
   providers: VcsProvider[];
+  vcsConfigured: boolean;
   branches: string[];
   branchFilter: string;
   branchIndex: number;
@@ -166,6 +192,7 @@ export interface AppContext {
   setReconnectKey: (v: (prev: number) => number) => void;
   setBranches: (v: string[]) => void;
   flashStatus: (msg: string) => void;
+  triggerSync: () => void;
   refreshSessions: () => TmuxSession[];
   refreshPr: () => void;
   performDelete: (sessionName: string, branch: string) => void;
@@ -577,6 +604,11 @@ export function handleSidebarInput(
     ctx.flashStatus(rebaseMessages[rebaseOntoMaster(wt.path)]);
     return;
   }
+  if (input === 'g') {
+    ctx.flashStatus('Syncing with origin...');
+    ctx.triggerSync();
+    return;
+  }
   if (input === 'j' || key.downArrow) {
     ctx.setSelectedIndex((i) => Math.min(i + 1, ctx.totalItems - 1));
   }
@@ -660,7 +692,7 @@ export function handleGlobalInput(
       ctx.setFocus('sidebar');
       return;
     }
-    if (input === '2' && ctx.activeTab !== 'reviews') {
+    if (input === '2' && ctx.activeTab !== 'reviews' && ctx.vcsConfigured) {
       ctx.setActiveTab('reviews');
       ctx.setFocus('sidebar');
       return;

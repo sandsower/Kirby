@@ -295,4 +295,29 @@ export const azureDevOpsProvider: VcsProvider = {
   getPullRequestUrl(project: Record<string, string>, prId: number): string {
     return `https://dev.azure.com/${project.org}/${project.project}/_git/${project.repo}/pullrequest/${prId}`;
   },
+
+  async fetchMergedBranches(
+    auth: Record<string, string>,
+    project: Record<string, string>,
+    branches: string[]
+  ): Promise<Set<string>> {
+    if (branches.length === 0) return new Set();
+    const config = toAdoConfig(auth, project);
+    const url = `${baseUrl(
+      config
+    )}/pullrequests?searchCriteria.status=completed&api-version=7.1`;
+    const res = await fetch(url, { headers: authHeaders(config.pat) });
+    if (!res.ok) return new Set();
+
+    const data = (await res.json()) as {
+      value?: Array<{ sourceRefName?: string }>;
+    };
+    const branchSet = new Set(branches);
+    const matched = new Set<string>();
+    for (const pr of data.value ?? []) {
+      const source = (pr.sourceRefName ?? '').replace(/^refs\/heads\//, '');
+      if (branchSet.has(source)) matched.add(source);
+    }
+    return matched;
+  },
 };

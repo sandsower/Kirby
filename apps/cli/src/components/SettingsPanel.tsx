@@ -6,6 +6,7 @@ export interface SettingsField {
   label: string;
   key: string;
   masked?: boolean;
+  description?: string;
   presets?: { name: string; value: string | null }[];
   /** Which config bag this field lives in */
   configBag: 'global' | 'project' | 'vendorAuth' | 'vendorProject';
@@ -16,6 +17,19 @@ export const AI_PRESETS: { name: string; value: string | null }[] = [
   { name: 'Codex', value: 'codex' },
   { name: 'Gemini', value: 'gemini' },
   { name: 'Copilot', value: 'gh copilot' },
+  { name: 'Custom', value: null },
+];
+
+export const BOOL_PRESETS: { name: string; value: string | null }[] = [
+  { name: 'Off', value: 'false' },
+  { name: 'On', value: 'true' },
+];
+
+export const SYNC_INTERVAL_PRESETS: { name: string; value: string | null }[] = [
+  { name: '1 hour', value: '3600000' },
+  { name: '5 min', value: '300000' },
+  { name: '15 min', value: '900000' },
+  { name: '30 min', value: '1800000' },
   { name: 'Custom', value: null },
 ];
 
@@ -34,6 +48,29 @@ export function buildSettingsFields(
   ];
 
   if (provider) {
+    fields.push(
+      {
+        label: 'Auto Delete on Merge',
+        key: 'autoDeleteOnMerge',
+        description: 'Remove merged worktree branches automatically',
+        presets: BOOL_PRESETS,
+        configBag: 'global',
+      },
+      {
+        label: 'Auto Rebase',
+        key: 'autoRebase',
+        description: 'Rebase worktree branches onto master after sync',
+        presets: BOOL_PRESETS,
+        configBag: 'global',
+      },
+      {
+        label: 'Sync Interval',
+        key: 'mergePollInterval',
+        description: 'How often to check for merged PRs and conflicts',
+        presets: SYNC_INTERVAL_PRESETS,
+        configBag: 'global',
+      }
+    );
     for (const f of provider.authFields) {
       fields.push({
         label: f.label,
@@ -116,25 +153,40 @@ export function SettingsPanel({
         }
 
         return (
-          <Text key={field.key}>
-            <Text color={selected ? 'cyan' : undefined}>
-              {selected ? '› ' : '  '}
-            </Text>
-            <Text bold={selected}>{field.label}: </Text>
-            {isEditing ? (
-              <Text color="cyan">
-                {editBuffer}
-                <Text dimColor>_</Text>
+          <Box key={field.key} flexDirection="column">
+            <Text>
+              <Text color={selected ? 'cyan' : undefined}>
+                {selected ? '› ' : '  '}
               </Text>
-            ) : (
-              <Text dimColor={!rawValue && !field.presets}>{displayValue}</Text>
-            )}
-            {selected && field.presets && !isEditing ? (
-              <Text dimColor> ←/→ preset · Enter custom</Text>
+              <Text bold={selected}>{field.label}: </Text>
+              {isEditing ? (
+                <Text color="cyan">
+                  {editBuffer}
+                  <Text dimColor>_</Text>
+                </Text>
+              ) : (
+                <Text dimColor={!rawValue && !field.presets}>
+                  {displayValue}
+                </Text>
+              )}
+              {selected && field.presets && !isEditing ? (
+                <Text dimColor> ←/→ preset · Enter custom</Text>
+              ) : null}
+            </Text>
+            {selected && field.description ? (
+              <Text dimColor> {field.description}</Text>
             ) : null}
-          </Text>
+          </Box>
         );
       })}
+      {!provider ? (
+        <Box marginTop={1}>
+          <Text dimColor>
+            Connect to GitHub or Azure DevOps to enable PR tracking,
+            auto-rebase, and auto-delete.
+          </Text>
+        </Box>
+      ) : null}
       <Box marginTop={1}>
         <Text dimColor>j/k nav · Enter edit · a auto-detect · Esc back</Text>
       </Box>

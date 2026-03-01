@@ -60,6 +60,8 @@ export function Sidebar({
   vcsConfigured,
   sidebarWidth,
   orphanPrs,
+  mergedBranches,
+  conflictCounts,
 }: {
   sessions: TmuxSession[];
   selectedIndex: number;
@@ -68,6 +70,8 @@ export function Sidebar({
   vcsConfigured: boolean;
   sidebarWidth: number;
   orphanPrs: PullRequestInfo[];
+  mergedBranches: Set<string>;
+  conflictCounts: Map<string, number>;
 }) {
   const innerWidth = Math.max(10, sidebarWidth - 2);
   const activeOrphanPrs = orphanPrs.filter((pr) => pr.isDraft !== true);
@@ -90,6 +94,8 @@ export function Sidebar({
             (b) => branchToSessionName(b) === s.name
           );
           const pr = branch ? prMap[branch] : undefined;
+          const isMerged = branch ? mergedBranches.has(branch) : false;
+          const conflicts = branch ? conflictCounts.get(branch) : undefined;
           return (
             <Box key={s.name} flexDirection="column">
               <Text>
@@ -98,7 +104,19 @@ export function Sidebar({
                 </Text>
                 <Text color={color}>{icon} </Text>
                 <Text bold={selected}>{truncate(s.name, 42)}</Text>
+                {isMerged ? (
+                  <Text dimColor color="green">
+                    {' '}
+                    merged
+                  </Text>
+                ) : null}
               </Text>
+              {conflicts != null && conflicts > 0 ? (
+                <Text dimColor color="yellow">
+                  {'    '}
+                  {conflicts} conflict{conflicts !== 1 ? 's' : ''}
+                </Text>
+              ) : null}
               {vcsConfigured ? (
                 <PrBadge pr={pr} sidebarWidth={sidebarWidth} />
               ) : null}
@@ -106,24 +124,28 @@ export function Sidebar({
           );
         })
       )}
-      <OrphanPrSection
-        title="🎪 Pull Requests"
-        prs={activeOrphanPrs}
-        startIndex={sessions.length}
-        selectedIndex={selectedIndex}
-        focused={focused}
-        innerWidth={innerWidth}
-        sidebarWidth={sidebarWidth}
-      />
-      <OrphanPrSection
-        title="✍️ Draft Pull Requests"
-        prs={draftOrphanPrs}
-        startIndex={sessions.length + activeOrphanPrs.length}
-        selectedIndex={selectedIndex}
-        focused={focused}
-        innerWidth={innerWidth}
-        sidebarWidth={sidebarWidth}
-      />
+      {vcsConfigured ? (
+        <>
+          <OrphanPrSection
+            title="🎪 Pull Requests"
+            prs={activeOrphanPrs}
+            startIndex={sessions.length}
+            selectedIndex={selectedIndex}
+            focused={focused}
+            innerWidth={innerWidth}
+            sidebarWidth={sidebarWidth}
+          />
+          <OrphanPrSection
+            title="✍️ Draft Pull Requests"
+            prs={draftOrphanPrs}
+            startIndex={sessions.length + activeOrphanPrs.length}
+            selectedIndex={selectedIndex}
+            focused={focused}
+            innerWidth={innerWidth}
+            sidebarWidth={sidebarWidth}
+          />
+        </>
+      ) : null}
       <Box marginTop={1} flexDirection="column">
         <Text dimColor>
           <Text color="cyan">c</Text> checkout branch
@@ -137,6 +159,16 @@ export function Sidebar({
         <Text dimColor>
           <Text color="cyan">u</Text> rebase onto master
         </Text>
+        {vcsConfigured ? (
+          <>
+            <Text dimColor>
+              <Text color="cyan">r</Text> refresh PR data
+            </Text>
+            <Text dimColor>
+              <Text color="cyan">g</Text> sync with origin
+            </Text>
+          </>
+        ) : null}
         <Text dimColor>
           <Text color="cyan">tab</Text> switch focus
         </Text>
@@ -147,10 +179,12 @@ export function Sidebar({
           <Text color="cyan">q</Text> quit
         </Text>
       </Box>
-      <Box marginTop={1} flexDirection="column">
-        <Text dimColor>🔧✅ passed 🔧🔥 failed 🔧⏳ pending</Text>
-        <Text dimColor>🔔 needs attention ⭐ fully approved</Text>
-      </Box>
+      {vcsConfigured ? (
+        <Box marginTop={1} flexDirection="column">
+          <Text dimColor>🔧✅ passed 🔧🔥 failed 🔧⏳ pending</Text>
+          <Text dimColor>🔔 needs attention ⭐ fully approved</Text>
+        </Box>
+      ) : null}
     </Box>
   );
 }

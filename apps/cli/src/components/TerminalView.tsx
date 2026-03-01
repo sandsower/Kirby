@@ -10,7 +10,7 @@ export function TerminalView({
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1} overflow="hidden">
       <Text bold color={focused ? 'green' : 'gray'}>
-        Agent
+        🤖 Agent
       </Text>
       <Text dimColor>{'─'.repeat(40)}</Text>
       <Text wrap="truncate">{content}</Text>
