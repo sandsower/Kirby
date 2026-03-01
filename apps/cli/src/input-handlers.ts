@@ -16,6 +16,7 @@ import type { TmuxSession } from '@kirby/tmux-manager';
 import { readConfig, autoDetectProjectConfig } from '@kirby/vcs-core';
 import type { AppConfig, VcsProvider, PullRequestInfo } from '@kirby/vcs-core';
 import type { ActiveTab } from './types.js';
+import { handleTextInput } from './utils/handle-text-input.js';
 import {
   buildSettingsFields,
   resolveValue,
@@ -198,10 +199,6 @@ export function handleReviewConfirmInput(
       });
       return;
     }
-    if (key.backspace || key.delete) {
-      ctx.setReviewInstruction((v) => v.slice(0, -1));
-      return;
-    }
     if (key.upArrow || (input === 'k' && key.ctrl)) {
       ctx.setReviewConfirm({ ...confirm, selectedOption: 0 });
       return;
@@ -210,9 +207,7 @@ export function handleReviewConfirmInput(
       ctx.setReviewConfirm({ ...confirm, selectedOption: 2 });
       return;
     }
-    if (input && !key.ctrl && !key.meta) {
-      ctx.setReviewInstruction((v) => v + input);
-    }
+    handleTextInput(input, key, ctx.setReviewInstruction);
     return;
   }
 
@@ -314,13 +309,7 @@ export function handleBranchPickerInput(
     return;
   }
 
-  if (key.backspace || key.delete) {
-    ctx.setBranchFilter((f) => f.slice(0, -1));
-    ctx.setBranchIndex(0);
-    return;
-  }
-  if (input && !key.ctrl && !key.meta) {
-    ctx.setBranchFilter((f) => f + input);
+  if (handleTextInput(input, key, ctx.setBranchFilter)) {
     ctx.setBranchIndex(0);
   }
 }
@@ -350,13 +339,7 @@ export function handleConfirmDeleteInput(
     ctx.setConfirmInput('');
     return;
   }
-  if (key.backspace || key.delete) {
-    ctx.setConfirmInput((v) => v.slice(0, -1));
-    return;
-  }
-  if (input && !key.ctrl && !key.meta) {
-    ctx.setConfirmInput((v) => v + input);
-  }
+  handleTextInput(input, key, ctx.setConfirmInput);
 }
 
 export function handleSettingsInput(
@@ -380,13 +363,7 @@ export function handleSettingsInput(
       ctx.setEditBuffer('');
       return;
     }
-    if (key.backspace || key.delete) {
-      ctx.setEditBuffer((v) => v.slice(0, -1));
-      return;
-    }
-    if (input && !key.ctrl && !key.meta) {
-      ctx.setEditBuffer((v) => v + input);
-    }
+    handleTextInput(input, key, ctx.setEditBuffer);
     return;
   }
 

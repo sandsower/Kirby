@@ -68,6 +68,7 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
   } | null = null;
   private _sessionName: string;
   private _paneId: string | null = null;
+  private _nextPendingId = -1;
 
   constructor(sessionName: string) {
     super();
@@ -164,8 +165,9 @@ export class ControlConnection extends EventEmitter<ControlConnectionEvents> {
       // We'll match by the next %begin we see that isn't already tracked.
       // Commands are processed in order, so we use a queue approach.
       const marker = { resolve, output: [] as string[] };
-      // We store with key -1 as a "pending" marker; parseLine will assign the real cmdNumber.
-      this.pendingCommands.set(-Date.now(), marker);
+      // Pending commands use negative keys (monotonically decreasing) so they
+      // can be distinguished from real cmdNumbers returned by tmux.
+      this.pendingCommands.set(this._nextPendingId--, marker);
       this.proc!.stdin!.write(command + '\n');
     });
   }

@@ -4,6 +4,7 @@ import { useConfig } from '../context/ConfigContext.js';
 import { checkGhAuth } from '@kirby/vcs-github';
 import { BOOL_PRESETS, resolveValue } from './SettingsPanel.js';
 import type { SettingsField } from './SettingsPanel.js';
+import { handleTextInput } from '../utils/handle-text-input.js';
 
 type Step = 'welcome' | 'fields' | 'preferences' | 'done';
 
@@ -133,13 +134,7 @@ export function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
           setEditBuffer('');
           return;
         }
-        if (key.backspace || key.delete) {
-          setEditBuffer((v) => v.slice(0, -1));
-          return;
-        }
-        if (input && !key.ctrl && !key.meta) {
-          setEditBuffer((v) => v + input);
-        }
+        handleTextInput(input, key, setEditBuffer);
         return;
       }
       // Not editing — navigate

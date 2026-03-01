@@ -122,7 +122,7 @@ function StatusBar({
 
 // ── App ────────────────────────────────────────────────────────────
 
-function App() {
+function App({ forceSetup }: { forceSetup: boolean }) {
   const { exit } = useApp();
   const { stdout } = useStdout();
   const termRows = stdout?.rows ?? 24;
@@ -555,6 +555,6 @@ if (targetDir) {
 
 render(
   <ConfigProvider providers={providers}>
-    <App />
+    <App forceSetup={forceSetup} />
   </ConfigProvider>
 );
