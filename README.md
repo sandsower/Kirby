@@ -1,108 +1,72 @@
-# New Nx Repository
+# 😸 Kirby
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+A terminal UI for managing multiple AI coding sessions across git worktrees, with integrated GitHub and Azure DevOps pull request tracking.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+<!-- screenshot -->
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/nx-api/js?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+## Features
 
-## Try the full Nx platform
+- **Session management** — create, kill, and delete worktree-based AI coding sessions from a single TUI
+- **PR tracking** — view open, draft, and merged pull requests alongside your active sessions
+- **Code reviews tab** — see PRs where you're a reviewer, grouped by status (needs review, waiting for author, approved)
+- **Branch sync** — automatic merge detection, conflict counting, auto-delete of merged branches, one-key rebase
+- **Terminal integration** — full ANSI passthrough and input forwarding to tmux sessions
+- **Configurable AI tool** — switch between Claude, Codex, Gemini, Copilot, or a custom command
+- **Settings panel** — auto-detect VCS provider, configure sync intervals, and set project preferences
 
-🚀 If you haven't connected to Nx Cloud yet, [complete your setup here](https://cloud.nx.app/setup/connect-workspace/guide). Get faster builds with remote caching, distributed task execution, and self-healing CI. [See how your workspace can benefit](#nx-cloud).
+## Prerequisites
 
-## Generate a library
+- Node.js 20+
+- tmux
+- git
+- `gh` CLI (for GitHub provider)
 
-```sh
-npx nx g @nx/js:lib packages/pkg1 --publishable --importPath=@my-org/pkg1
-```
-
-## Run tasks
-
-To build the library use:
-
-```sh
-npx nx build pkg1
-```
-
-To run any task with Nx use:
+## Quick Start
 
 ```sh
-npx nx <target> <project-name>
+npm install
+npx nx serve cli
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
-
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Versioning and releasing
-
-To version and release the library use
-
-```
-npx nx release
-```
-
-Pass `--dry-run` to see what would happen without actually releasing the library.
-
-[Learn more about Nx release &raquo;](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Keep TypeScript project references up to date
-
-Nx automatically updates TypeScript [project references](https://www.typescriptlang.org/docs/handbook/project-references.html) in `tsconfig.json` files to ensure they remain accurate based on your project dependencies (`import` or `require` statements). This sync is automatically done when running tasks such as `build` or `typecheck`, which require updated references to function correctly.
-
-To manually trigger the process to sync the project graph dependencies information to the TypeScript project references, run the following command:
+Pass a target directory to manage a different project:
 
 ```sh
-npx nx sync
+npx nx serve cli -- /path/to/project
 ```
 
-You can enforce that the TypeScript project references are always in the correct state when running in CI by adding a step to your CI job configuration that runs the following command:
+## Project Structure
 
-```sh
-npx nx sync:check
+```
+apps/cli/              Ink TUI application (React 19, ESM)
+libs/tmux-manager/     Worktree session lifecycle and persistence
+libs/tmux-control/     tmux command execution primitives
+libs/vcs/core/         VCS abstraction and config management
+libs/vcs/azure-devops/ Azure DevOps provider
+libs/vcs/github/       GitHub provider (GraphQL)
 ```
 
-[Learn more about nx sync](https://nx.dev/reference/nx-commands#sync)
+## Keyboard Shortcuts
 
-## Nx Cloud
+| Key       | Action                                    |
+| --------- | ----------------------------------------- |
+| `1` / `2` | Switch to Sessions / Reviews tab          |
+| `Tab`     | Toggle focus between sidebar and terminal |
+| `j` / `k` | Navigate list items                       |
+| `c`       | Create new session (opens branch picker)  |
+| `d`       | Delete session (with confirmation)        |
+| `K`       | Kill session without deleting branch      |
+| `u`       | Rebase selected branch onto master        |
+| `g`       | Trigger git sync                          |
+| `r`       | Refresh PR data                           |
+| `s`       | Open settings panel                       |
+| `Enter`   | Start review session (Reviews tab)        |
+| `Esc`     | Exit terminal focus / close panel         |
+| `q`       | Quit                                      |
 
-Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
+## Configuration
 
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+Press `s` to open the settings panel. From there you can configure the VCS provider, AI tool, sync intervals, and auto-behaviors (auto-delete merged branches, auto-rebase). Press `a` to auto-detect project settings from the git remote.
 
-### Set up CI (non-Github Actions CI)
+## License
 
-**Note:** This is only required if your CI provider is not GitHub Actions.
-
-Use the following command to configure a CI workflow for your workspace:
-
-```sh
-npx nx g ci-workflow
-```
-
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Install Nx Console
-
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
-
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Useful links
-
-Learn more:
-
-- [Learn more about this workspace setup](https://nx.dev/nx-api/js?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-And join the Nx community:
-
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+MIT
