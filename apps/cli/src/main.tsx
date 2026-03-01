@@ -142,7 +142,7 @@ function App() {
   const vcsConfigured = isVcsConfigured(config, provider);
   const sidebarWidth = 48;
   const paneCols = Math.max(20, termCols - sidebarWidth - 2);
-  const paneRows = Math.max(5, termRows - 3);
+  const paneRows = Math.max(5, termRows - 5); // top bar (3) + TerminalView header (2)
   const [activeTab, setActiveTab] = useState<ActiveTab>('sessions');
   const [focus, setFocus] = useState<Focus>('sidebar');
   const [selectedIndex, setSelectedIndex] = useState(0);
