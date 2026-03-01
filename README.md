@@ -2,8 +2,6 @@
 
 A terminal UI for managing multiple AI coding sessions across git worktrees, with integrated GitHub and Azure DevOps pull request tracking.
 
-<!-- screenshot -->
-
 ## Features
 
 - **Session management** — create, kill, and delete worktree-based AI coding sessions from a single TUI
@@ -13,6 +11,14 @@ A terminal UI for managing multiple AI coding sessions across git worktrees, wit
 - **Terminal integration** — full ANSI passthrough and input forwarding to tmux sessions
 - **Configurable AI tool** — switch between Claude, Codex, Gemini, Copilot, or a custom command
 - **Settings panel** — auto-detect VCS provider, configure sync intervals, and set project preferences
+
+## Example
+
+The worktree session tab shows active PR's and lets you press enter to create a new agent session via tmux and creates a worktree based on the branch.
+![screenshot of session tab](sessions-example.png)
+
+The reviews tab works similarly showing you pull requests you are assigned to review and lets you start a new session with an automatic review as the initial prompt.
+![screenshot of review tab](reviews-example.png)
 
 ## Prerequisites
 
@@ -42,7 +48,7 @@ libs/tmux-manager/     Worktree session lifecycle and persistence
 libs/tmux-control/     tmux command execution primitives
 libs/vcs/core/         VCS abstraction and config management
 libs/vcs/azure-devops/ Azure DevOps provider
-libs/vcs/github/       GitHub provider (GraphQL)
+libs/vcs/github/       GitHub provider (via gh cli)
 ```
 
 ## Keyboard Shortcuts
