@@ -88,6 +88,31 @@ export function latestReviewPerUser(
   }));
 }
 
+// ── gh auth check ─────────────────────────────────────────────────
+
+export async function checkGhAuth(): Promise<{
+  authenticated: boolean;
+  username?: string;
+}> {
+  try {
+    const { stdout } = await execFile('gh', ['auth', 'status']);
+    const match = stdout.match(/Logged in to github\.com account (\S+)/);
+    if (match) return { authenticated: true, username: match[1] };
+    // Fallback: if "Logged in" appears without the exact pattern
+    if (stdout.includes('Logged in')) return { authenticated: true };
+    return { authenticated: false };
+  } catch (err: unknown) {
+    // gh auth status exits non-zero when not authenticated,
+    // but the info may still be in stderr
+    const e = err as Record<string, unknown>;
+    const stderr = typeof e.stderr === 'string' ? e.stderr : '';
+    const match = stderr.match(/Logged in to github\.com account (\S+)/);
+    if (match) return { authenticated: true, username: match[1] };
+    if (stderr.includes('Logged in')) return { authenticated: true };
+    return { authenticated: false };
+  }
+}
+
 // ── GraphQL search ────────────────────────────────────────────────
 
 const SEARCH_PRS_QUERY = `

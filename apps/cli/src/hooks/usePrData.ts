@@ -1,23 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import type { AppConfig, VcsProvider, BranchPrMap } from '@kirby/vcs-core';
-import { isVcsConfigured } from '@kirby/vcs-core';
+import type { BranchPrMap } from '@kirby/vcs-core';
+import { useConfig } from '../context/ConfigContext.js';
 import { logError } from '../log.js';
 
-export function usePrData(
-  config: AppConfig,
-  provider: VcsProvider | null,
-  refreshInterval = 60000
-) {
+export function usePrData(refreshInterval = 60000) {
+  const { config, provider } = useConfig();
+  const { vendorAuth, vendorProject, prPollInterval } = config;
   const [prMap, setPrMap] = useState<BranchPrMap>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   const refresh = useCallback(() => {
-    if (!provider || !isVcsConfigured(config, provider)) return;
+    if (!provider || !provider.isConfigured(vendorAuth, vendorProject)) return;
     setLoading(true);
     provider
-      .fetchPullRequests(config.vendorAuth, config.vendorProject)
+      .fetchPullRequests(vendorAuth, vendorProject)
       .then((map) => {
         if (mountedRef.current) {
           setPrMap(map);
@@ -33,21 +31,25 @@ export function usePrData(
       .finally(() => {
         if (mountedRef.current) setLoading(false);
       });
-  }, [config, provider]);
+  }, [vendorAuth, vendorProject, provider]);
 
   useEffect(() => {
     mountedRef.current = true;
-    if (!provider || !isVcsConfigured(config, provider)) return;
+    if (!provider || !provider.isConfigured(vendorAuth, vendorProject)) return;
     refresh();
-    const interval = setInterval(
-      refresh,
-      config.prPollInterval ?? refreshInterval
-    );
+    const interval = setInterval(refresh, prPollInterval ?? refreshInterval);
     return () => {
       mountedRef.current = false;
       clearInterval(interval);
     };
-  }, [config, provider, refresh, refreshInterval]);
+  }, [
+    vendorAuth,
+    vendorProject,
+    prPollInterval,
+    provider,
+    refresh,
+    refreshInterval,
+  ]);
 
   return { prMap, loading, error, refresh };
 }

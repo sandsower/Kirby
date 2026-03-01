@@ -5,12 +5,12 @@ import type { BranchPrMap, PullRequestInfo } from '@kirby/vcs-core';
 import { PrBadge } from './PrBadge.js';
 import { useConflictCount } from '../hooks/useConflictCount.js';
 import { truncate } from '../utils/truncate.js';
+import { useConfig } from '../context/ConfigContext.js';
 
 function SessionItem({
   session,
   selected,
   prMap,
-  vcsConfigured,
   sidebarWidth,
   isMerged,
   lastSynced,
@@ -18,11 +18,11 @@ function SessionItem({
   session: TmuxSession;
   selected: boolean;
   prMap: BranchPrMap;
-  vcsConfigured: boolean;
   sidebarWidth: number;
   isMerged: boolean;
   lastSynced: number;
 }) {
+  const { vcsConfigured } = useConfig();
   const icon = session.windows > 0 ? '●' : '○';
   const color = session.windows > 0 ? 'green' : 'gray';
   const branch = Object.keys(prMap).find(
@@ -109,7 +109,6 @@ export function Sidebar({
   selectedIndex,
   focused,
   prMap,
-  vcsConfigured,
   sidebarWidth,
   orphanPrs,
   mergedBranches,
@@ -119,12 +118,12 @@ export function Sidebar({
   selectedIndex: number;
   focused: boolean;
   prMap: BranchPrMap;
-  vcsConfigured: boolean;
   sidebarWidth: number;
   orphanPrs: PullRequestInfo[];
   mergedBranches: Set<string>;
   lastSynced: number;
 }) {
+  const { vcsConfigured } = useConfig();
   const innerWidth = Math.max(10, sidebarWidth - 2);
   const activeOrphanPrs = orphanPrs.filter((pr) => pr.isDraft !== true);
   const draftOrphanPrs = orphanPrs.filter((pr) => pr.isDraft === true);
@@ -149,7 +148,6 @@ export function Sidebar({
               session={s}
               selected={i === selectedIndex}
               prMap={prMap}
-              vcsConfigured={vcsConfigured}
               sidebarWidth={sidebarWidth}
               isMerged={isMerged}
               lastSynced={lastSynced}

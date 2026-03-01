@@ -1,1 +1,1 @@
-export { githubProvider } from './lib/provider.js';
+export { githubProvider, checkGhAuth } from './lib/provider.js';

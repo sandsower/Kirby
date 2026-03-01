@@ -11,13 +11,8 @@ import {
   branchToSessionName,
 } from '@kirby/tmux-manager';
 import type { TmuxSession } from '@kirby/tmux-manager';
-import {
-  readConfig,
-  isVcsConfigured,
-  autoDetectProjectConfig,
-} from '@kirby/vcs-core';
+import { readConfig, autoDetectProjectConfig } from '@kirby/vcs-core';
 import type {
-  AppConfig,
   VcsProvider,
   PullRequestInfo,
   CategorizedReviews,
@@ -33,6 +28,7 @@ import { SettingsPanel } from './components/SettingsPanel.js';
 import { ReviewsSidebar } from './components/ReviewsSidebar.js';
 import { ReviewDetailPane } from './components/ReviewDetailPane.js';
 import { ReviewConfirmPane } from './components/ReviewConfirmPane.js';
+import { OnboardingWizard } from './components/OnboardingWizard.js';
 import { usePrData } from './hooks/usePrData.js';
 import { useRemoteSync } from './hooks/useRemoteSync.js';
 import { useMergedBranches } from './hooks/useMergedBranches.js';
@@ -46,6 +42,7 @@ import {
   handleReviewConfirmInput,
 } from './input-handlers.js';
 import type { AppContext, Focus } from './input-handlers.js';
+import { ConfigProvider, useConfig } from './context/ConfigContext.js';
 
 // ── Provider registry ──────────────────────────────────────────────
 
@@ -63,7 +60,6 @@ function StatusBar({
   sessionCount,
   focus,
   hasTmux,
-  vcsConfigured,
   inFlight,
 }: {
   confirmDelete: {
@@ -79,9 +75,9 @@ function StatusBar({
   sessionCount: number;
   focus: Focus;
   hasTmux: boolean;
-  vcsConfigured: boolean;
   inFlight: Set<string>;
 }) {
+  const { vcsConfigured } = useConfig();
   if (confirmDelete) {
     return (
       <Text>
@@ -131,15 +127,18 @@ function App() {
   const { stdout } = useStdout();
   const termRows = stdout?.rows ?? 24;
   const termCols = stdout?.columns ?? 80;
-  const [config, setConfig] = useState<AppConfig>(() => readConfig());
+  const { config, setConfig, provider, providers, vcsConfigured, updateField } =
+    useConfig();
+  const [onboardingComplete, setOnboardingComplete] = useState(false);
 
-  // Resolve the active VCS provider from config
-  const provider = useMemo<VcsProvider | null>(() => {
-    if (!config.vendor) return null;
-    return providers.find((p) => p.id === config.vendor) ?? null;
-  }, [config.vendor]);
+  // Show onboarding when vendor was auto-detected but VCS isn't fully configured,
+  // or when --setup flag is passed to force re-configuration
+  const showOnboarding =
+    !onboardingComplete &&
+    !!config.vendor &&
+    !!provider &&
+    (!vcsConfigured || forceSetup);
 
-  const vcsConfigured = isVcsConfigured(config, provider);
   const sidebarWidth = 48;
   const paneCols = Math.max(20, termCols - sidebarWidth - 2);
   const paneRows = Math.max(5, termRows - 5); // top bar (3) + TerminalView header (2)
@@ -177,11 +176,7 @@ function App() {
     selectedOption: number;
   } | null>(null);
   const [reviewInstruction, setReviewInstruction] = useState('');
-  const {
-    prMap,
-    error: prError,
-    refresh: refreshPr,
-  } = usePrData(config, provider);
+  const { prMap, error: prError, refresh: refreshPr } = usePrData();
 
   // Worktree branch names tracked in state (updated by refreshSessions)
   const [worktreeBranches, setWorktreeBranches] = useState<string[]>([]);
@@ -190,11 +185,9 @@ function App() {
   const { run: runOp, isRunning, inFlight } = useAsyncOperation();
 
   // Event-driven sync chain
-  const { lastSynced, triggerSync } = useRemoteSync(config, provider);
+  const { lastSynced, triggerSync } = useRemoteSync();
 
   const { mergedBranches } = useMergedBranches(
-    provider,
-    config,
     worktreeBranches,
     lastSynced,
     (sessionName, branch) => {
@@ -433,17 +426,27 @@ function App() {
     performDelete,
     sendInput,
     exit,
+    updateField,
     runOp,
     isRunning,
   };
 
   useInput((input, key) => {
+    if (showOnboarding) return;
     if (creating) return handleBranchPickerInput(input, key, ctx);
     if (confirmDelete) return handleConfirmDeleteInput(input, key, ctx);
     if (settingsOpen) return handleSettingsInput(input, key, ctx);
     if (reviewConfirm) return handleReviewConfirmInput(input, key, ctx);
     handleGlobalInput(input, key, ctx);
   });
+
+  if (showOnboarding) {
+    return (
+      <Box flexDirection="column" height={termRows}>
+        <OnboardingWizard onComplete={() => setOnboardingComplete(true)} />
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column" height={termRows}>
@@ -453,7 +456,6 @@ function App() {
           <TabBar
             activeTab={activeTab}
             reviewCount={categorizedReviews.needsReview.length}
-            vcsConfigured={vcsConfigured}
           />
           <StatusBar
             confirmDelete={confirmDelete}
@@ -465,7 +467,6 @@ function App() {
             sessionCount={sortedSessions.length}
             focus={focus}
             hasTmux={hasTmux}
-            vcsConfigured={vcsConfigured}
             inFlight={inFlight}
           />
         </Box>
@@ -479,7 +480,6 @@ function App() {
               selectedIndex={selectedIndex}
               focused={focus === 'sidebar' && !creating && !settingsOpen}
               prMap={prMap}
-              vcsConfigured={vcsConfigured}
               sidebarWidth={sidebarWidth}
               orphanPrs={orphanPrs}
               mergedBranches={mergedBranches}
@@ -487,8 +487,6 @@ function App() {
             />
             {settingsOpen && (
               <SettingsPanel
-                config={config}
-                provider={provider}
                 fieldIndex={settingsFieldIndex}
                 editingField={editingField}
                 editBuffer={editBuffer}
@@ -548,10 +546,15 @@ function App() {
   );
 }
 
-// Optional: pass a path argument to run in a different directory
-const targetDir = process.argv[2];
+const args = process.argv.slice(2);
+const forceSetup = args.includes('--setup');
+const targetDir = args.find((a) => !a.startsWith('--'));
 if (targetDir) {
   process.chdir(targetDir);
 }
 
-render(<App />);
+render(
+  <ConfigProvider providers={providers}>
+    <App />
+  </ConfigProvider>
+);

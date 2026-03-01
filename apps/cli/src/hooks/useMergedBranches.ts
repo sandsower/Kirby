@@ -1,16 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
-import type { AppConfig, VcsProvider } from '@kirby/vcs-core';
-import { isVcsConfigured } from '@kirby/vcs-core';
 import { canRemoveBranch, branchToSessionName } from '@kirby/tmux-manager';
+import { useConfig } from '../context/ConfigContext.js';
 import { logError } from '../log.js';
 
 export function useMergedBranches(
-  provider: VcsProvider | null,
-  config: AppConfig,
   branches: string[],
   lastSynced: number,
   onAutoDelete: (sessionName: string, branch: string) => void
 ) {
+  const { config, provider, vcsConfigured } = useConfig();
+  const { vendorAuth, vendorProject, autoDeleteOnMerge } = config;
   const [mergedBranches, setMergedBranches] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const mountedRef = useRef(true);
@@ -26,13 +25,7 @@ export function useMergedBranches(
 
   useEffect(() => {
     const fetchMerged = provider?.fetchMergedBranches;
-    if (
-      !lastSynced ||
-      !fetchMerged ||
-      !provider ||
-      !isVcsConfigured(config, provider) ||
-      branches.length === 0
-    )
+    if (!lastSynced || !fetchMerged || !vcsConfigured || branches.length === 0)
       return;
 
     let cancelled = false;
@@ -41,11 +34,7 @@ export function useMergedBranches(
     (async () => {
       let merged: Set<string>;
       try {
-        merged = await fetchMerged(
-          config.vendorAuth,
-          config.vendorProject,
-          branches
-        );
+        merged = await fetchMerged(vendorAuth, vendorProject, branches);
       } catch (err: unknown) {
         logError('fetchMergedBranches', err);
         merged = new Set<string>();
@@ -56,7 +45,7 @@ export function useMergedBranches(
       setLoading(false);
 
       // Auto-delete merged branches
-      if (config.autoDeleteOnMerge) {
+      if (autoDeleteOnMerge) {
         for (const branch of merged) {
           const check = await canRemoveBranch(branch);
           if (cancelled || !mountedRef.current) return;
@@ -70,7 +59,15 @@ export function useMergedBranches(
     return () => {
       cancelled = true;
     };
-  }, [lastSynced, provider, config, branches]);
+  }, [
+    lastSynced,
+    provider,
+    vcsConfigured,
+    vendorAuth,
+    vendorProject,
+    autoDeleteOnMerge,
+    branches,
+  ]);
 
   return { mergedBranches, loading };
 }

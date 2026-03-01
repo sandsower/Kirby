@@ -13,14 +13,7 @@ import {
   rebaseOntoMaster,
 } from '@kirby/tmux-manager';
 import type { TmuxSession } from '@kirby/tmux-manager';
-import {
-  readConfig,
-  readGlobalConfig,
-  writeGlobalConfig,
-  readProjectConfig,
-  writeProjectConfig,
-  autoDetectProjectConfig,
-} from '@kirby/vcs-core';
+import { readConfig, autoDetectProjectConfig } from '@kirby/vcs-core';
 import type { AppConfig, VcsProvider, PullRequestInfo } from '@kirby/vcs-core';
 import type { ActiveTab } from './types.js';
 import {
@@ -29,94 +22,6 @@ import {
   type SettingsField,
 } from './components/SettingsPanel.js';
 import type { OperationName } from './hooks/useAsyncOperation.js';
-
-/** Coerce a string value to the correct type for known config keys */
-function coerceConfigValue(
-  key: string,
-  value: string | undefined
-): string | boolean | number | undefined {
-  if (value === undefined) return undefined;
-  if (key === 'autoDeleteOnMerge' || key === 'autoRebase') {
-    return value === 'true';
-  }
-  if (key === 'mergePollInterval' || key === 'prPollInterval') {
-    const n = Number(value);
-    return Number.isFinite(n) ? n : undefined;
-  }
-  return value;
-}
-
-/** Update a config field in memory, returning a new AppConfig */
-function updateConfigField(
-  config: AppConfig,
-  field: SettingsField,
-  value: string | undefined
-): AppConfig {
-  switch (field.configBag) {
-    case 'global':
-    case 'project':
-      return {
-        ...config,
-        [field.key]: coerceConfigValue(field.key, value),
-      } as AppConfig;
-    case 'vendorAuth':
-      return {
-        ...config,
-        vendorAuth: { ...config.vendorAuth, [field.key]: value ?? '' },
-      };
-    case 'vendorProject':
-      return {
-        ...config,
-        vendorProject: { ...config.vendorProject, [field.key]: value ?? '' },
-      };
-  }
-}
-
-/** Persist a single settings field to the correct config file */
-function persistConfigField(
-  field: SettingsField,
-  value: string | undefined,
-  config: AppConfig
-): void {
-  switch (field.configBag) {
-    case 'global': {
-      const g = readGlobalConfig();
-      (g as Record<string, unknown>)[field.key] = coerceConfigValue(
-        field.key,
-        value
-      );
-      writeGlobalConfig(g);
-      break;
-    }
-    case 'project': {
-      const p = readProjectConfig();
-      (p as Record<string, unknown>)[field.key] = coerceConfigValue(
-        field.key,
-        value
-      );
-      writeProjectConfig(p);
-      break;
-    }
-    case 'vendorAuth': {
-      const g = readGlobalConfig();
-      const vendor = config.vendor;
-      if (vendor) {
-        if (!g.vendorAuth) g.vendorAuth = {};
-        if (!g.vendorAuth[vendor]) g.vendorAuth[vendor] = {};
-        g.vendorAuth[vendor]![field.key] = value ?? '';
-        writeGlobalConfig(g);
-      }
-      break;
-    }
-    case 'vendorProject': {
-      const p = readProjectConfig();
-      if (!p.vendorProject) p.vendorProject = {};
-      p.vendorProject[field.key] = value ?? '';
-      writeProjectConfig(p);
-      break;
-    }
-  }
-}
 
 export type Focus = 'sidebar' | 'terminal';
 
@@ -198,6 +103,9 @@ export interface AppContext {
   performDelete: (sessionName: string, branch: string) => Promise<void>;
   sendInput: (input: string, key: Key) => void;
   exit: () => void;
+
+  // Config
+  updateField: (field: SettingsField, value: string | undefined) => void;
 
   // Async operations
   runOp: (name: OperationName, fn: () => Promise<void>) => Promise<void>;
@@ -467,12 +375,7 @@ export function handleSettingsInput(
     if (key.return) {
       const field = fields[ctx.settingsFieldIndex]!;
       const value = ctx.editBuffer || undefined;
-
-      // Update in-memory config
-      const updated = updateConfigField(ctx.config, field, value);
-      ctx.setConfig(updated);
-      persistConfigField(field, value, updated);
-
+      ctx.updateField(field, value);
       ctx.setEditingField(null);
       ctx.setEditBuffer('');
       return;
@@ -513,14 +416,22 @@ export function handleSettingsInput(
         idx = (idx - 1 + namedPresets.length) % namedPresets.length;
       }
       const preset = namedPresets[idx]!;
-      const updated = { ...ctx.config, [field.key]: preset.value };
-      ctx.setConfig(updated);
-      persistConfigField(field, preset.value ?? undefined, updated);
+      ctx.updateField(field, preset.value ?? undefined);
     }
     return;
   }
   if (key.return) {
     const field = fields[ctx.settingsFieldIndex]!;
+    // Fields with only named presets (no Custom/null entry): toggle instead of edit
+    if (field.presets && field.presets.every((p) => p.value !== null)) {
+      const namedPresets = field.presets;
+      const currentValue = resolveValue(ctx.config, field) || undefined;
+      const effectiveValue = currentValue || namedPresets[0]!.value;
+      let idx = namedPresets.findIndex((p) => p.value === effectiveValue);
+      idx = (idx + 1) % namedPresets.length;
+      ctx.updateField(field, namedPresets[idx]!.value ?? undefined);
+      return;
+    }
     ctx.setEditingField(field.key);
     ctx.setEditBuffer(resolveValue(ctx.config, field));
     return;

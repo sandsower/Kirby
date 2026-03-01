@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Text, Box } from 'ink';
 import type { AppConfig, VcsProvider } from '@kirby/vcs-core';
+import { useConfig } from '../context/ConfigContext.js';
 
 export interface SettingsField {
   label: string;
@@ -107,18 +108,15 @@ export function resolveValue(config: AppConfig, field: SettingsField): string {
 }
 
 export function SettingsPanel({
-  config,
-  provider,
   fieldIndex,
   editingField,
   editBuffer,
 }: {
-  config: AppConfig;
-  provider: VcsProvider | null;
   fieldIndex: number;
   editingField: string | null;
   editBuffer: string;
 }) {
+  const { config, provider } = useConfig();
   const fields = useMemo(() => buildSettingsFields(provider), [provider]);
 
   return (
@@ -170,7 +168,11 @@ export function SettingsPanel({
                 </Text>
               )}
               {selected && field.presets && !isEditing ? (
-                <Text dimColor> ←/→ preset · Enter custom</Text>
+                <Text dimColor>
+                  {field.presets.every((p) => p.value !== null)
+                    ? ' ←/→ or Enter to toggle'
+                    : ' ←/→ preset · Enter custom'}
+                </Text>
               ) : null}
             </Text>
             {selected && field.description ? (
@@ -188,7 +190,13 @@ export function SettingsPanel({
         </Box>
       ) : null}
       <Box marginTop={1}>
-        <Text dimColor>j/k nav · Enter edit · a auto-detect · Esc back</Text>
+        <Text dimColor>
+          j/k nav ·{' '}
+          {fields[fieldIndex]?.presets?.every((p) => p.value !== null)
+            ? 'Enter toggle'
+            : 'Enter edit'}{' '}
+          · a auto-detect · Esc back
+        </Text>
       </Box>
     </Box>
   );

@@ -1,15 +1,16 @@
 import { Text, Box } from 'ink';
 import type { ActiveTab } from '../types.js';
+import { useConfig } from '../context/ConfigContext.js';
 
 export function TabBar({
   activeTab,
   reviewCount,
-  vcsConfigured,
 }: {
   activeTab: ActiveTab;
   reviewCount: number;
-  vcsConfigured: boolean;
 }) {
+  const { vcsConfigured } = useConfig();
+
   return (
     <Box gap={1}>
       <Text
