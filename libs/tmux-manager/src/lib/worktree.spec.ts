@@ -288,6 +288,39 @@ describe('listWorktrees', () => {
   });
 });
 
+describe('listWorktrees with resolver', () => {
+  it('should use resolver.owns() to filter worktrees', async () => {
+    mockExecFile.mockResolvedValueOnce(
+      resolve(
+        [
+          'worktree /home/user/repo.git',
+          'HEAD abc123',
+          'bare',
+          '',
+          'worktree /home/user/repo.git/main',
+          'HEAD def456',
+          'branch refs/heads/main',
+          '',
+          'worktree /home/user/repo.git/feature-auth',
+          'HEAD 789abc',
+          'branch refs/heads/feature/auth',
+          '',
+        ].join('\n')
+      )
+    );
+
+    const resolver = {
+      pathFor: (b: string) => `/home/user/repo.git/${b.replace(/\//g, '-')}`,
+      owns: (p: string) =>
+        p.startsWith('/home/user/repo.git/') && p !== '/home/user/repo.git/',
+    };
+
+    const result = await listWorktrees(resolver);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.branch).toBe('feature/auth');
+  });
+});
+
 describe('rebaseOntoMaster', () => {
   it('should return success when fetch and rebase both succeed', async () => {
     mockExecFile
