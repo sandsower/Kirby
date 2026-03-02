@@ -3,12 +3,12 @@ import { resolve as pathResolve } from 'node:path';
 import { createResolver, sanitizeBranch } from './worktree-resolver.js';
 
 vi.mock('./exec.js', () => ({
-  exec: vi.fn(),
+  execFile: vi.fn(),
 }));
 
-import { exec } from './exec.js';
+import { execFile } from './exec.js';
 
-const mockExec = vi.mocked(exec);
+const mockExecFile = vi.mocked(execFile);
 
 function resolve(stdout = '') {
   return { stdout, stderr: '' };
@@ -43,8 +43,8 @@ describe('createResolver', () => {
   });
 
   it('should detect bare repo and use sibling layout', async () => {
-    mockExec.mockResolvedValueOnce(resolve('true'));
-    mockExec.mockResolvedValueOnce(resolve('/home/user/repo.git'));
+    mockExecFile.mockResolvedValueOnce(resolve('true'));
+    mockExecFile.mockResolvedValueOnce(resolve('/home/user/repo.git'));
 
     const resolver = await createResolver();
     expect(resolver.pathFor('feature/auth')).toBe(
@@ -52,18 +52,18 @@ describe('createResolver', () => {
     );
   });
 
-  it('should fall back to .kirby/worktrees/ for non-bare repos', async () => {
-    mockExec.mockResolvedValueOnce(resolve('false'));
+  it('should fall back to .claude/worktrees/ for non-bare repos', async () => {
+    mockExecFile.mockResolvedValueOnce(resolve('false'));
 
     const resolver = await createResolver();
     expect(resolver.pathFor('feature/auth')).toContain(
-      '.kirby/worktrees/feature-auth'
+      '.claude/worktrees/feature-auth'
     );
   });
 
   it('owns() should match paths within bare repo scope', async () => {
-    mockExec.mockResolvedValueOnce(resolve('true'));
-    mockExec.mockResolvedValueOnce(resolve('/home/user/repo.git'));
+    mockExecFile.mockResolvedValueOnce(resolve('true'));
+    mockExecFile.mockResolvedValueOnce(resolve('/home/user/repo.git'));
 
     const resolver = await createResolver();
     expect(resolver.owns('/home/user/repo.git/feature-auth')).toBe(true);
@@ -76,9 +76,9 @@ describe('createResolver', () => {
   });
 
   it('should fall back to default when git fails', async () => {
-    mockExec.mockRejectedValueOnce(new Error('not a git repo'));
+    mockExecFile.mockRejectedValueOnce(new Error('not a git repo'));
 
     const resolver = await createResolver();
-    expect(resolver.pathFor('main')).toContain('.kirby/worktrees/main');
+    expect(resolver.pathFor('main')).toContain('.claude/worktrees/main');
   });
 });

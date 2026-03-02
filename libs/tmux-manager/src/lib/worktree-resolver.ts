@@ -1,5 +1,5 @@
 import { resolve as pathResolve } from 'node:path';
-import { exec } from './exec.js';
+import { execFile } from './exec.js';
 
 export function sanitizeBranch(branch: string): string {
   return branch.replace(/\//g, '-');
@@ -20,14 +20,17 @@ export async function createResolver(
 
   // 2. Bare repo detection
   try {
-    const { stdout: isBare } = await exec(
-      'git rev-parse --is-bare-repository',
+    const { stdout: isBare } = await execFile(
+      'git',
+      ['rev-parse', '--is-bare-repository'],
       { encoding: 'utf8' }
     );
     if (isBare.trim() === 'true') {
-      const { stdout: gitDir } = await exec('git rev-parse --git-common-dir', {
-        encoding: 'utf8',
-      });
+      const { stdout: gitDir } = await execFile(
+        'git',
+        ['rev-parse', '--git-common-dir'],
+        { encoding: 'utf8' }
+      );
       const bareRoot = pathResolve(gitDir.trim());
       return {
         pathFor: (branch) => pathResolve(bareRoot, sanitizeBranch(branch)),
@@ -38,11 +41,11 @@ export async function createResolver(
     // Not a git repo or git not available
   }
 
-  // 3. Default: .kirby/worktrees/
-  const base = pathResolve(process.cwd(), '.kirby/worktrees');
+  // 3. Default: .claude/worktrees/
+  const base = pathResolve(process.cwd(), '.claude/worktrees');
   return {
     pathFor: (branch) => pathResolve(base, sanitizeBranch(branch)),
-    owns: (p) => p.includes('.kirby/worktrees/'),
+    owns: (p) => p.includes('.claude/worktrees/'),
   };
 }
 
