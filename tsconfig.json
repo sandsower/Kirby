@@ -20,6 +20,24 @@
     },
     {
       "path": "./libs/vcs/github"
+    },
+    {
+      "path": "./.tui/worktrees/azure-pr-sidebar/libs/azure-devops"
+    },
+    {
+      "path": "./.tui/worktrees/azure-pr-sidebar/libs/shared-types"
+    },
+    {
+      "path": "./.tui/worktrees/azure-pr-sidebar/libs/tmux-control"
+    },
+    {
+      "path": "./.tui/worktrees/azure-pr-sidebar/libs/tmux-manager"
+    },
+    {
+      "path": "./.tui/worktrees/azure-pr-sidebar/apps/cli"
+    },
+    {
+      "path": "./.tui/worktrees/azure-pr-sidebar"
     }
   ]
 }
